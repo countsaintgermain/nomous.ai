@@ -1,0 +1,45 @@
+{
+  "context": {
+    "fileName": [
+      "GEMINI.md",
+      ".gemini/prompt.md"
+    ]
+  },
+  "skills": {
+    "enabled": true,
+    "disabled": []
+  },
+  "mcpServers": {
+    "sqlite": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-sqlite",
+        "--db-path",
+        "backend/test.db"
+      ]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "."
+      ]
+    },
+    // "postgres": {
+    //   "command": "npx",
+    //   "args": [
+    //     "-y",
+    //     "@modelcontextprotocol/server-postgres",
+    //     "postgresql://user:pass@localhost:5432/twoja_baza"
+    //   ]
+    // },
+    "browser": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-puppeteer"
+      ]
+    }
+  }
+}

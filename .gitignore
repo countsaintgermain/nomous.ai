@@ -1,0 +1,46 @@
+# =========================
+# System i Edytory (Mac)
+# =========================
+.DS_Store
+.DS_Store?
+._*
+.Trashes
+.vscode/
+.idea/
+
+# =========================
+# Zmienne środowiskowe i Sekrety
+# =========================
+.env
+.env.*
+!.env.example
+GEMINI.md
+
+# =========================
+# Backend (Python / FastAPI)
+# =========================
+venv/
+env/
+backend/venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+*.sqlite3
+*.db
+backend_log.txt
+frontend_log.txt
+
+# =========================
+# Frontend (Next.js / React)
+# =========================
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+out/
+build/
+.swc/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

@@ -1,0 +1,26 @@
+# Node & Frontend
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+out/
+build/
+.swc/
+
+# Python & Backend
+venv/
+backend/venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+alembic/__pycache__/
+backend/test.db
+
+# Other
+.DS_Store
+.idea/
+.vscode/
+backend_log.txt
+frontend_log.txt
+worker_log.txt

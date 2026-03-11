@@ -1,0 +1,76 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: nomous_postgres_dev
+    restart: always
+    environment:
+      POSTGRES_USER: nomous_user
+      POSTGRES_PASSWORD: devpassword123
+      POSTGRES_DB: nomous_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: nomous_redis_dev
+    restart: always
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nomous_api_dev
+    restart: always
+    depends_on:
+      - db
+      - redis
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=postgresql://nomous_user:devpassword123@db:5432/nomous_dev
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - ./backend/.env
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nomous_worker_dev
+    restart: always
+    depends_on:
+      - redis
+      - db
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=postgresql://nomous_user:devpassword123@db:5432/nomous_dev
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - ./backend/.env
+    command: ["taskiq", "worker", "app.core.worker:broker", "--reload"]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nomous_frontend_dev
+    restart: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api:8000
+    depends_on:
+      - api
+
+volumes:
+  postgres_data_dev:
