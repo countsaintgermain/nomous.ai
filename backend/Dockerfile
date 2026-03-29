@@ -1,29 +1,25 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
 
-# Instalacja zależności systemowych dla PaddleOCR, PyPDF2 i innych (np. tesseract, poppler)
+# Instalacja zależności systemowych
 RUN apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
-    tesseract-ocr \
-    poppler-utils \
+    build-essential \
+    python3-dev \
+    libpq-dev \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Kopiowanie zależności backendowych
-COPY requirements.txt .
+# Instalacja najnowszego pip i setuptools dla 3.13
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Instalacja zależności Pythona
-RUN pip install --no-cache-dir --upgrade pip
+# Kopiowanie i instalacja wymagań
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Jeżeli potrzebujesz dodatkowych paczek odkrytych w trakcie (Pinecone, LangChain, pdfplumber):
-RUN pip install pinecone langchain-pinecone langchain-google-genai langchain-classic pdfplumber
-
-# Skopiuj kod źródłowy na końcu, żeby wykorzystać cache warstw Dockera dla wymagań powyzęj.
 COPY . .
 
-EXPOSE 8000
-
-# Komenda domyślna dla API (fastapi)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Domyślna komenda
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,84 +1,100 @@
 'use client'
 
-import { Settings, LayoutDashboard, History, FileText, ChevronRight, Briefcase as BriefcaseIcon, Database } from "lucide-react"
-
-interface Case {
-    id: number;
-    title: string;
-}
+import { 
+    Settings, 
+    LayoutDashboard, 
+    History, 
+    FileText, 
+    ChevronRight, 
+    Briefcase as BriefcaseIcon, 
+    Database,
+    Gavel,
+    Users,
+    Calendar,
+    Zap,
+    Link as LinkIcon,
+    Mic2
+} from 'lucide-react'
+import { type Case } from '@/lib/types'
+import { type ViewState } from '@/app/page.tsx'
 
 interface SidebarProps {
     activeCase: Case | null;
-    activeView: 'overview' | 'briefcase' | 'facts';
-    onViewChange: (view: 'overview' | 'briefcase' | 'facts') => void;
+    activeView: ViewState;
+    onViewChange: (view: ViewState) => void;
 }
 
 export function Sidebar({ activeCase, activeView, onViewChange }: SidebarProps) {
+    const isPispEnabled = activeCase && (activeCase.signature || activeCase.court);
+
+    const navItems = [
+        { id: 'overview', label: 'Ogólne', icon: LayoutDashboard },
+        { id: 'briefcase', label: 'Aktówka', icon: BriefcaseIcon },
+        { id: 'facts', label: 'Baza Faktów', icon: Database },
+    ]
+
     return (
-        <div className="flex w-64 flex-col bg-card border-r border-border">
-            {/* Globalne Menu (Widoczne gdy nie ma wybranej sprawy) */}
-            {!activeCase ? (
-                <nav className="flex-1 px-4 py-6 space-y-2">
-                    <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                        Menu Główne
-                    </div>
-                    <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-indigo-500 dark:text-indigo-400 bg-accent transition-colors">
-                        <LayoutDashboard className="h-4 w-4" />
-                        <span>Wybierz Sprawę</span>
-                    </button>
-                    <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
-                        <History className="h-4 w-4" />
-                        <span>Ostatnie Sprawy</span>
-                    </button>
-                </nav>
-            ) : (
-                /* Kontekstowe Menu Sprawy */
-                <nav className="flex-1 px-4 py-6 space-y-2">
-                    <div className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 truncate">
-                        Kontekst Sprawy
-                        <div className="text-foreground text-sm font-medium mt-1 truncate">{activeCase.title}</div>
-                    </div>
-                    <div className="h-4"></div>
-                    <button
-                        onClick={() => onViewChange('overview')}
-                        className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors ${activeView === 'overview' ? 'text-indigo-500 dark:text-indigo-400 bg-accent' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
-                    >
-                        <div className="flex items-center gap-3">
+        <div className="flex w-64 flex-col bg-card border-r border-border h-full">
+            <div className="flex-1 overflow-y-auto">
+                {!activeCase ? (
+                    <nav className="px-4 py-6 space-y-2">
+                        <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                            Menu Główne
+                        </div>
+                        <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-indigo-500 dark:text-indigo-400 bg-accent transition-colors">
                             <LayoutDashboard className="h-4 w-4" />
-                            <span>Ogólne</span>
+                            <span>Wybierz Sprawę</span>
+                        </button>
+                    </nav>
+                ) : (
+                    <div className="px-4 py-6 space-y-6">
+                        <div className="px-3">
+                            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+                                Kontekst Sprawy
+                            </div>
+                            <div className="text-foreground text-sm font-bold truncate">
+                                {activeCase.title}
+                            </div>
                         </div>
-                        {activeView === 'overview' && <ChevronRight className="h-4 w-4" />}
-                    </button>
-                    <button
-                        onClick={() => onViewChange('briefcase')}
-                        className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors ${activeView === 'briefcase' ? 'text-indigo-500 dark:text-indigo-400 bg-accent' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
-                    >
-                        <div className="flex items-center gap-3">
-                            <BriefcaseIcon className="h-4 w-4" />
-                            <span>Aktówka</span>
-                        </div>
-                        {activeView === 'briefcase' && <ChevronRight className="h-4 w-4" />}
-                    </button>
-                    <button
-                        onClick={() => onViewChange('facts')}
-                        className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors ${activeView === 'facts' ? 'text-indigo-500 dark:text-indigo-400 bg-accent' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
-                    >
-                        <div className="flex items-center gap-3">
-                            <Database className="h-4 w-4" />
-                            <span>Baza Faktów</span>
-                        </div>
-                        {activeView === 'facts' && <ChevronRight className="h-4 w-4" />}
-                    </button>
 
-                </nav>
-            )}
+                        <nav className="space-y-1">
+                            {navItems.map((item) => (
+                                <button
+                                    key={item.id}
+                                    onClick={() => onViewChange(item.id as ViewState)}
+                                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors ${activeView === item.id ? 'text-indigo-500 dark:text-indigo-400 bg-accent' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <item.icon className="h-4 w-4" />
+                                        <span>{item.label}</span>
+                                    </div>
+                                    {activeView === item.id && <ChevronRight className="h-4 w-4" />}
+                                </button>
+                            ))}
+                        </nav>
 
-            {/* Stopka Uzytkownika */}
-            <div className="border-t border-border p-4">
-                <div className="flex items-center gap-3 text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
-                    <Settings className="h-4 w-4" />
-                    <span>Ustawienia Systemu</span>
-                </div>
+                        {isPispEnabled && (
+                            <div className="space-y-1">
+                                <div className="px-3 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                                    <span className="w-1 h-1 rounded-full bg-indigo-500"></span>
+                                    Integracje
+                                </div>
+                                <nav className="space-y-1">
+                                    <button
+                                        onClick={() => onViewChange('pisp')}
+                                        className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors ${activeView === 'pisp' ? 'text-indigo-500 dark:text-indigo-400 bg-accent' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <Gavel className="h-4 w-4 opacity-70" />
+                                            <span>Portal PISP</span>
+                                        </div>
+                                        {activeView === 'pisp' && <ChevronRight className="h-4 w-4" />}
+                                    </button>
+                                </nav>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     )

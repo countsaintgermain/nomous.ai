@@ -3,25 +3,31 @@
 import { useState, useEffect } from "react"
 import { Sidebar } from "@/components/Sidebar"
 import { ChatArea } from "@/components/ChatArea"
-import { CaseDetails, type Case } from "@/components/CaseDetails"
+import { CaseDetails } from "@/components/CaseDetails"
 import { Briefcase } from "@/components/Briefcase"
 import { FactsView } from "@/components/FactsView"
 import { TopBar } from "@/components/TopBar"
+import { PispView } from "@/components/PispView"
+import { type Case } from "@/lib/types"
 
-export type ViewState = 'overview' | 'briefcase' | 'facts'
+export type ViewState = 'overview' | 'briefcase' | 'facts' | 'pisp'
 
 export default function Home() {
     const [cases, setCases] = useState<Case[]>([])
     const [activeCase, setActiveCase] = useState<Case | null>(null)
     const [activeView, setActiveView] = useState<ViewState>('overview')
 
-    // Pobranie listy spraw dla hardkodowanego Usera z Backendu (Port 8000)
+    // Pobranie listy spraw dla hardkodowanego Usera z Backendu
     useEffect(() => {
-        fetch("http://localhost:8000/api/cases")
+        fetch("/api/cases")
             .then(res => res.json())
             .then(data => {
                 if (Array.isArray(data)) {
                     setCases(data)
+                    if (data.length > 0 && !activeCase) {
+                        setActiveCase(data[0]);
+                        setActiveView('pisp');
+                    }
                 } else {
                     console.error("Expected array from /api/cases, got:", data)
                     setCases([])
@@ -34,7 +40,7 @@ export default function Home() {
 
     const handleSelectCase = (c: Case) => {
         setActiveCase(c)
-        setActiveView('overview') // Default view when switching cases
+        setActiveView('overview') 
     }
 
     const handleAddCase = (newCase: Case) => {
@@ -50,6 +56,22 @@ export default function Home() {
         }
     }
 
+    useEffect(() => {
+        if (activeCase) {
+            const interval = setInterval(() => {
+                fetch(`/api/cases/${activeCase.id}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (JSON.stringify(data) !== JSON.stringify(activeCase)) {
+                            handleUpdateCase(data);
+                        }
+                    })
+                    .catch(console.error);
+            }, 5000); 
+            return () => clearInterval(interval);
+        }
+    }, [activeCase?.id]);
+
     return (
         <div className="flex flex-col h-screen w-full overflow-hidden bg-background text-foreground font-sans">
             <TopBar
@@ -64,8 +86,7 @@ export default function Home() {
                     activeView={activeView}
                     onViewChange={setActiveView}
                 />
-                <div className="flex-1 flex overflow-hidden">
-                    {/* Renderujemy widok zgodnie z panelem bocznym. Jesli brak sprawy to tylko placeholder. */}
+                <div className="flex-1 flex overflow-hidden min-h-0">
                     {!activeCase ? (
                         <div className="flex-1 flex items-center justify-center p-8 bg-muted/20">
                             <div className="text-center text-muted-foreground">Wybierz lub utwórz sprawę na górnym pasku, aby zacząć pracę.</div>
@@ -75,11 +96,11 @@ export default function Home() {
                             {activeView === 'overview' && <CaseDetails selectedCase={activeCase} onUpdateCase={handleUpdateCase} />}
                             {activeView === 'briefcase' && <Briefcase caseId={activeCase.id} onAnalyze={(docId, filename) => console.log('analyze', docId)} />}
                             {activeView === 'facts' && <FactsView caseId={activeCase.id} />}
+                            {activeView === 'pisp' && <PispView activeCase={activeCase} />}
                         </>
                     )}
 
-                    {/* Chat zawsze widoczny, dostosowujący swój system prompt do activeCase */}
-                    <ChatArea caseId={activeCase?.id || null} />
+                    <ChatArea key={activeCase?.id || 'none'} caseId={activeCase?.id || null} />
                 </div>
             </main>
         </div>

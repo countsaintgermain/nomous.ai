@@ -17,12 +17,17 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
+import { getAppLocale } from '@/lib/i18n'
+
 interface Document {
     id: number
     filename: string
+    document_name?: string
     file_type: string
     tag: string
     status: 'uploaded' | 'processing' | 'ready' | 'error'
+    created_date: string
+    document_date: string
 }
 
 export function Briefcase({
@@ -51,7 +56,7 @@ export function Briefcase({
 
     const fetchDocuments = async () => {
         try {
-            const res = await fetch(`http://localhost:8000/api/cases/${caseId}/documents`)
+            const res = await fetch(`/api/cases/${caseId}/documents`)
             if (!res.ok) throw new Error('Fetch failed')
             const data = await res.json()
             setDocuments(data)
@@ -67,7 +72,7 @@ export function Briefcase({
         e.stopPropagation()
         try {
             setUploading(true)
-            const res = await fetch(`http://localhost:8000/api/cases/${caseId}/documents/${docId}/analyze`, { method: 'POST' })
+            const res = await fetch(`/api/cases/${caseId}/documents/${docId}/analyze`, { method: 'POST' })
             if (!res.ok) throw new Error('Analysis failed to start')
             fetchDocuments()
         } catch (err) {
@@ -86,7 +91,7 @@ export function Briefcase({
     const confirmDelete = async () => {
         if (!docToDelete) return
         try {
-            await fetch(`http://localhost:8000/api/cases/${caseId}/documents/${docToDelete}`, { method: 'DELETE' })
+            await fetch(`/api/cases/${caseId}/documents/${docToDelete}`, { method: 'DELETE' })
             fetchDocuments()
         } catch (err) {
             console.error('Delete failed:', err)
@@ -103,7 +108,7 @@ export function Briefcase({
         formData.append('tag', tag)
 
         try {
-            await fetch(`http://localhost:8000/api/cases/${caseId}/documents`, {
+            await fetch(`/api/cases/${caseId}/documents`, {
                 method: 'POST',
                 body: formData,
             })
@@ -131,7 +136,6 @@ export function Briefcase({
 
     return (
         <div className="flex-1 flex flex-col h-full bg-background overflow-hidden">
-            {/* Header Section */}
             <div className="flex justify-between items-center p-6 border-b border-border bg-card/40">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-indigo-500/10 rounded-lg">
@@ -239,7 +243,6 @@ export function Briefcase({
                 </DialogContent>
             </Dialog>
 
-            {/* Content Section */}
             <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-muted">
                 <div className="max-w-4xl mx-auto space-y-4">
                     {documents.map((doc) => (
@@ -258,9 +261,14 @@ export function Briefcase({
                                         <FileText className="h-5 w-5 text-muted-foreground group-hover:text-indigo-500" />
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                        <div className="font-medium text-card-foreground truncate pr-4">{doc.filename}</div>
+                                        <div className="font-medium text-card-foreground truncate pr-4">
+                                            {doc.document_name}
+                                        </div>
                                         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                                             <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-background text-muted-foreground border-border font-normal uppercase">{doc.tag}</Badge>
+                                            <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-indigo-500/5 text-indigo-600 dark:text-indigo-400 border-indigo-500/20 font-medium">
+                                                {new Date(doc.document_date).toLocaleDateString(getAppLocale())}
+                                            </Badge>
                                             <StatusBadge status={doc.status} />
                                             {doc.status === 'uploaded' && (
                                                 <Button
@@ -308,7 +316,7 @@ function StatusBadge({ status }: { status: string }) {
     switch (status) {
         case 'processing':
             return <Badge variant="outline" className="text-[10px] py-0 gap-1.5 opacity-80 bg-accent text-accent-foreground border-border"><Loader2 className="h-2.5 w-2.5 animate-spin" /> Analiza...</Badge>
-        case 'indexed':
+        case 'ready':
             return <Badge variant="outline" className="text-[10px] py-0 gap-1.5 text-green-600 dark:text-green-400 bg-green-500/10 border-green-500/20"><CheckCircle2 className="h-2.5 w-2.5" /> Gotowe</Badge>
         case 'error':
             return <Badge variant="outline" className="text-[10px] py-0 gap-1.5 text-red-600 dark:text-red-400 bg-red-500/10 border-red-500/20"><AlertCircle className="h-2.5 w-2.5" /> Błąd</Badge>

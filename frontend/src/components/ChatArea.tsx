@@ -4,8 +4,9 @@ import { useRef, useEffect, useState } from "react"
 import { useChat } from "ai/react"
 import { Send, UploadCloud, FileText, Bot, User, ChevronRight, MessageSquareText } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
+
+import Markdown from "markdown-to-jsx"
 
 export function ChatArea({
     caseId
@@ -13,17 +14,45 @@ export function ChatArea({
     caseId: number | null
 }) {
     const [isOpen, setIsOpen] = useState(true)
-    const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
-        api: "http://localhost:8000/api/chat",
-        body: { case_id: caseId } // Przekazanie ID sprawy do pythona, by twardo trzymac namespace wektorow
+    const { messages, setMessages, input, handleInputChange, handleSubmit, isLoading } = useChat({
+        api: "/api/chat/",
+        body: { 
+            case_id: caseId,
+            session_id: `case_${caseId}`
+        } 
     })
+
+    // Pobierz historię przy zmianie sprawy
+    useEffect(() => {
+        if (!caseId) return;
+
+        const fetchHistory = async () => {
+            try {
+                const res = await fetch(`/api/chat/${caseId}/history?session_id=case_${caseId}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    // Mapowanie na format v-ai SDK (id jest wymagane dla mapowania)
+                    const formatted = data.messages.map((m: any, i: number) => ({
+                        id: `${caseId}_${i}`,
+                        role: m.role,
+                        content: m.content
+                    }));
+                    setMessages(formatted);
+                }
+            } catch (err) {
+                console.error("Failed to fetch history:", err);
+            }
+        };
+
+        fetchHistory();
+    }, [caseId, setMessages]);
 
     const messagesEndRef = useRef<HTMLDivElement>(null)
 
     // Autoscroll w dół przy nowej wiadomości
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-    }, [messages])
+    }, [messages, isLoading])
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files?.[0] || !caseId) return
@@ -34,7 +63,7 @@ export function ChatArea({
         formData.append("case_id", caseId.toString())
 
         try {
-            const res = await fetch("http://localhost:8000/api/cases/" + caseId + "/documents", {
+            const res = await fetch("/api/cases/" + caseId + "/documents", {
                 method: "POST",
                 body: formData,
             })
@@ -75,8 +104,8 @@ export function ChatArea({
     }
 
     return (
-        <div className="h-full w-[400px] flex flex-col bg-background relative border-l border-border transition-all duration-300 shrink-0">
-            {/* Pasek Górny z informacją z uploadem (dla uproszczenia tutaj w nagłówku) */}
+        <div className="h-full w-[400px] flex flex-col bg-background relative border-l border-border transition-all duration-300 shrink-0 min-h-0">
+            {/* Pasek Górny */}
             <div className="h-14 border-b border-border flex items-center justify-between px-4 bg-background/50 backdrop-blur-sm z-10 shrink-0">
                 <div className="flex items-center gap-2">
                     <Button
@@ -110,8 +139,8 @@ export function ChatArea({
             </div>
 
             {/* Obszar Rozmowy */}
-            <ScrollArea className="flex-1 p-4 md:p-6">
-                <div className="max-w-3xl mx-auto space-y-6 pb-20">
+            <div className="flex-1 overflow-y-auto min-h-0 flex flex-col">
+                <div className="p-4 md:p-6 space-y-6 flex-1">
                     {messages.length === 0 ? (
                         <div className="text-center text-muted-foreground mt-20">
                             <Bot className="h-10 w-10 mx-auto text-muted-foreground/50 mb-4" />
@@ -132,10 +161,12 @@ export function ChatArea({
                                 )}>
                                     {m.role === 'user' ? <User className="h-5 w-5 text-foreground" /> : <Bot className="h-5 w-5 text-indigo-700 dark:text-white" />}
                                 </div>
-                                <div className="flex-1 space-y-2 mt-1">
-                                    <p className="text-foreground leading-relaxed text-sm format-whitespace-pre-wrap">
-                                        {m.content}
-                                    </p>
+                                <div className="flex-1 min-w-0 space-y-2 mt-1">
+                                    <div className="text-foreground leading-relaxed text-sm prose prose-sm dark:prose-invert max-w-none">
+                                        <Markdown options={{ forceBlock: true }}>
+                                            {m.content}
+                                        </Markdown>
+                                    </div>
                                 </div>
                             </div>
                         ))
@@ -151,22 +182,22 @@ export function ChatArea({
                             </div>
                         </div>
                     )}
-                    <div ref={messagesEndRef} />
+                    <div ref={messagesEndRef} className="h-px" />
                 </div>
-            </ScrollArea>
+            </div>
 
-            {/* Input / Pole wpisywania */}
-            <div className="absolute bottom-6 left-0 right-0 w-full px-4 pointer-events-none">
-                <div className="max-w-3xl mx-auto pointer-events-auto">
+            {/* Input / Pole wpisywania - teraz w normalnym przepływie flex, nie absolute */}
+            <div className="p-4 bg-background border-t border-border shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
+                <div className="max-w-3xl mx-auto">
                     <form
                         onSubmit={handleSubmit}
-                        className="relative flex items-end overflow-hidden rounded-xl border border-border bg-background/90 backdrop-blur p-1 shadow-xl shadow-black/10 dark:shadow-black/40"
+                        className="relative flex items-end overflow-hidden rounded-xl border border-border bg-background p-1 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all"
                     >
                         <textarea
                             value={input}
                             onChange={handleInputChange}
-                            placeholder="Zadaj pytanie asystentowi prawnemu..."
-                            className="w-full resize-none bg-transparent px-4 py-3 sm:text-sm focus-visible:outline-none text-foreground placeholder:text-muted-foreground min-h-[52px] max-h-32 scrollbar-thin scrollbar-thumb-border"
+                            placeholder="Zadaj pytanie..."
+                            className="w-full resize-none bg-transparent px-4 py-3 sm:text-sm focus-visible:outline-none text-foreground placeholder:text-muted-foreground min-h-[52px] max-h-32"
                             rows={1}
                             onKeyDown={(e) => {
                                 if (e.key === "Enter" && !e.shiftKey) {
@@ -179,14 +210,14 @@ export function ChatArea({
                             type="submit"
                             size="icon"
                             disabled={isLoading || !input.trim()}
-                            className="shrink-0 mb-1 mr-1 h-9 w-9 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-600 dark:hover:bg-indigo-700 dark:text-white rounded-lg transition-colors absolute right-1 bottom-1 shadow-sm"
+                            className="shrink-0 mb-1 mr-1 h-9 w-9 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
                         >
                             <Send className="h-4 w-4" />
                             <span className="sr-only">Wyślij</span>
                         </Button>
                     </form>
-                    <div className="text-center mt-2.5 px-4 text-xs text-muted-foreground">
-                        AI generuje odpowiedzi bazując wyłącznie na wgranych aktach. Może popełniać błędy.
+                    <div className="text-center mt-2 text-[10px] text-muted-foreground">
+                        AI generuje odpowiedzi na podstawie akt sprawy.
                     </div>
                 </div>
             </div>

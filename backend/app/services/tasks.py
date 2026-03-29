@@ -1,124 +1,149 @@
 import os
+from google import genai
 from app.core.worker import broker
 from app.core.database import SessionLocal
 from app.models.document import Document
 from pinecone import Pinecone, ServerlessSpec
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain_core.documents import Document as LangchainDocument
-from paddleocr import PaddleOCR
+from langchain_core.prompts import PromptTemplate
 import pdfplumber
+import json
+from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Inicjalizacja modelu OCR w pamięci loadera
-ocr = PaddleOCR(use_angle_cls=True, lang='pl')
-
 @broker.task
 def process_document_ocr_task(doc_id: int):
+    print(f"Nomous.ia: ZADANIE PODJĘTE DLA ID: {doc_id}")
     db = SessionLocal()
     try:
         doc = db.query(Document).filter(Document.id == doc_id).first()
-        if not doc or not doc.s3_key:
-            return {"status": "error", "message": "Document not found or path missing"}
+        if not doc: return {"status": "error", "message": "Document not found"}
+
+        analysis_path = doc.s3_key_pdf or doc.s3_key_source or doc.s3_key
+        if not analysis_path or not os.path.exists(analysis_path):
+            return {"status": "error", "message": f"Path missing: {analysis_path}"}
 
         doc.status = "processing"
         db.commit()
 
-        # 1. OCR Ekstrakcja w zależności od rozszerzenia pliku
         extracted_text = ""
-        if doc.file_type and doc.file_type.lower() == 'pdf':
-            # Użycie pdfplumber dla stabilniejszej ekstrakcji PDF (omijając bugi PaddleOCR na ARM)
-            with pdfplumber.open(doc.s3_key) as pdf:
-                for page in pdf.pages:
-                    text = page.extract_text()
-                    if text:
-                        extracted_text += text + "\n"
-        else:
-            # Zakładamy że wgrano obraz (JPG/PNG), używamy PaddleOCR jako fallback
-            result = ocr.ocr(doc.s3_key)
-            if result and result[0]:
-                for line in result[0]:
-                    extracted_text += line[1][0] + "\n"
+        is_pdf = analysis_path.lower().endswith(".pdf")
         
+        if is_pdf:
+            try:
+                with pdfplumber.open(analysis_path) as pdf:
+                    for page in pdf.pages:
+                        text = page.extract_text()
+                        if text: extracted_text += text + "\n"
+            except Exception as e: print(f"Nomous.ia pdfplumber error: {e}")
         
-        doc.content_extracted = extracted_text[:5000] # Zachowaj do bazy max 5000 znaków dla metadanych
+        if not extracted_text.strip():
+            try:
+                from paddleocr import PaddleOCR
+                ocr_local = PaddleOCR(use_angle_cls=True, lang='pl', show_log=False)
+                result = ocr_local.ocr(analysis_path)
+                if result and result[0]:
+                    for line in result[0]: extracted_text += line[1][0] + "\n"
+            except Exception as e: print(f"Nomous.ia PaddleOCR error: {e}")
+        
+        if not extracted_text.strip():
+            doc.status = "error"
+            db.commit()
+            return
 
-        # 2. Inteligentna Analiza (Gemini)
+        doc.content_extracted = extracted_text[:20000]
+
+        # 1. Analiza Gemini (Gemini 3 Pro)
         try:
-            from langchain_google_genai import ChatGoogleGenerativeAI
-            from langchain.prompts import PromptTemplate
-            import json
+            client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+            prompt = f"""
+            Wykonaj rygorystyczną analizę prawną dokumentu procesowego.
             
-            sample_text = extracted_text[:15000] # Gemini context window
+            ZADANIA:
+            1. STRESZCZENIE: Zwięzłe (2-3 zdania), konkretne fakty.
+            2. OSOBY: Wszystkie imiona i nazwiska (oskarżeni, świadkowie, sędziowie).
+            3. DATY: Wszystkie daty zdarzeń i terminów.
+            4. KWOTY I KARY: Wyodrębnij precyzyjnie:
+               - Wymierzone kary (np. grzywna, kara więzienia, zakazy).
+               - Kwoty pieniężne (np. uszczuplenie podatku, odszkodowanie).
+               - Koszty sądowe i opłaty.
+            5. FAKTY: 3-5 kluczowych twierdzeń do bazy faktów.
+            6. DATA DOKUMENTU: Data wydania/sporządzenia.
             
-            prompt = PromptTemplate.from_template(
-                "Wykonaj profesjonalną analizę poniższego dokumentu prawniczego/biznesowego.\n"
-                "1. Zwróć zwięzłe streszczenie (2-3 zdania).\n"
-                "2. Wypisz zidentyfikowane kluczowe byty: Osoby (z imienia i nazwiska/nazwy firmy), Daty oraz Kwoty.\n\n"
-                "MUSISZ ZWRÓCIĆ WYŁĄCZNIE CZYSTY OBIEKT JSON wg poniższego schematu, bez żadnego formatowania markdown (bez ```json i ```):\n"
-                "{{\n"
-                '  "summary": "Tekst streszczenia",\n'
-                '  "entities": {{\n'
-                '    "osoby": ["Jan Kowalski", "Firma X"],\n'
-                '    "daty": ["2023-01-01", "2024-05-10"],\n'
-                '    "kwoty": ["10000 PLN", "50 EUR"]\n'
-                "  }}\n"
-                "}}\n\n"
-                "Dokument:\n{text}"
-            )
-            llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0) # Flash is faster and cheaper for this task
-            chain = prompt | llm
-            response = chain.invoke({"text": sample_text})
+            ZWRÓC WYŁĄCZNIE CZYSTY JSON:
+            {{ 
+                "summary": "...", 
+                "entities": {{ 
+                    "osoby": [], 
+                    "daty": [], 
+                    "kwoty": [],
+                    "kary": []
+                }},
+                "suggested_facts": [],
+                "document_date": "YYYY-MM-DD"
+            }}
             
-            json_str = response.content.replace("```json", "").replace("```", "").strip()
-            analysis_data = json.loads(json_str)
+            TEKST: {extracted_text[:15000]}
+            """
+            
+            response = client.models.generate_content(model='gemini-3-pro-preview', contents=prompt)
+            
+            clean_res = response.text.replace("```json", "").replace("```", "").strip()
+            analysis_data = json.loads(clean_res)
             
             doc.summary = analysis_data.get("summary", "")
             doc.entities = analysis_data.get("entities", {})
+            doc.suggested_facts = analysis_data.get("suggested_facts", [])
+            
+            # Wnioskowanie daty jeśli nie jest ustawiona (np. dla plików od użytkownika)
+            if not doc.document_date and analysis_data.get("document_date"):
+                try:
+                    doc.document_date = datetime.strptime(analysis_data["document_date"], "%Y-%m-%d")
+                except:
+                    print(f"Nomous.ia: Nie udało się sparsować daty AI: {analysis_data['document_date']}")
+                    
         except Exception as e:
-            print(f"Błąd analizy Gemini: {e}")
-            doc.summary = "Nie udało się wygenerować streszczenia ze względu na błąd modelu."
-            doc.entities = {}
+            print(f"Nomous.ia Gemini error: {e}")
+            doc.summary = "Dokument został wgrany, ale analiza AI jest w toku."
 
-        # 3. Wektoryzacja do Pinecone
-        pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-        index_name = os.getenv("PINECONE_INDEX_NAME", "nomous-dev-index")
-        
-        if index_name not in [idx.name for idx in pc.list_indexes()]:
-            pc.create_index(
-                name=index_name,
-                dimension=768, # Gemini
-                metric='cosine',
-                spec=ServerlessSpec(cloud='aws', region='us-east-1')
+        # 2. Wektoryzacja
+        try:
+            embeddings = OpenAIEmbeddings(
+                model="text-embedding-3-small",
+                dimensions=768,
+                api_key=os.getenv("OPENAI_API_KEY")
             )
-
-        # 4. Chunking (do modelu dodajemy wyekstrahowany tekst)
-        lc_document = LangchainDocument(page_content=extracted_text, metadata={"source": doc.filename, "doc_id": doc.id})
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        chunks = text_splitter.split_documents([lc_document])
-
-        # 5. Zapis do namespace'u po Case ID (separacja spraw)
-        namespace_id = f"case_{doc.case_id}"
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
-        
-        vectorstore = PineconeVectorStore.from_documents(
-            chunks,
-            embeddings,
-            index_name=index_name,
-            namespace=namespace_id
-        )
-
-        doc.pinecone_namespace = namespace_id
-        doc.status = "ready"
+            
+            namespace = f"case_{doc.case_id}" # Ujednolicony namespace dla całej sprawy
+            lc_doc = LangchainDocument(
+                page_content=extracted_text, 
+                metadata={"source": doc.filename, "doc_id": doc.id, "case_id": doc.case_id}
+            )
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+            chunks = text_splitter.split_documents([lc_doc])
+            
+            PineconeVectorStore.from_documents(
+                chunks, 
+                embeddings, 
+                index_name=os.getenv("PINECONE_INDEX_NAME", "nomous-dev-index"), 
+                namespace=namespace
+            )
+            doc.pinecone_namespace = namespace
+            doc.status = "ready"
+        except Exception as e:
+            print(f"Nomous.ia Wektoryzacja error: {e}")
+            doc.status = "error"
+            
         db.commit()
-
-        return {"status": "success", "chunks_processed": len(chunks)}
     except Exception as e:
-        doc.status = "error"
-        db.commit()
-        return {"status": "error", "message": str(e)}
+        db.rollback()
+        if 'doc' in locals():
+            doc.status = "error"
+            db.commit()
     finally:
         db.close()

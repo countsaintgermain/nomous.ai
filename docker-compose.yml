@@ -32,6 +32,7 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - nomous_uploads:/app/uploads
     environment:
       - DATABASE_URL=postgresql://nomous_user:devpassword123@db:5432/nomous_dev
       - REDIS_URL=redis://redis:6379/0
@@ -49,12 +50,13 @@ services:
       - db
     volumes:
       - ./backend:/app
+      - nomous_uploads:/app/uploads
     environment:
       - DATABASE_URL=postgresql://nomous_user:devpassword123@db:5432/nomous_dev
       - REDIS_URL=redis://redis:6379/0
     env_file:
       - ./backend/.env
-    command: ["taskiq", "worker", "app.core.worker:broker", "--reload"]
+    command: ["taskiq", "worker", "app.core.worker:broker"]
 
   frontend:
     build:
@@ -68,9 +70,10 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      - NEXT_PUBLIC_API_URL=http://api:8000
+      - NEXT_PUBLIC_API_URL=/api
     depends_on:
       - api
 
 volumes:
   postgres_data_dev:
+  nomous_uploads:

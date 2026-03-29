@@ -59,3 +59,13 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 frontend_log.txt
+\n# Uploads\nbackend/uploads/
+\n# Extension\nbrowser-extension/node_modules/\nbrowser-extension/.output/\nbrowser-extension/.wxt/
+
+# Uploads
+backend/uploads/
+
+# Extension
+browser-extension/node_modules/
+browser-extension/.output/
+browser-extension/.wxt/

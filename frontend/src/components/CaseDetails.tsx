@@ -4,14 +4,7 @@ import { useState, useEffect } from "react"
 import { FileText, Tag, AlignLeft, Pencil, Check, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-
-export type Case = {
-    id: number
-    title: string
-    signature?: string
-    description?: string
-    status: string
-}
+import { type Case } from "@/lib/types"
 
 export function CaseDetails({ 
     selectedCase,

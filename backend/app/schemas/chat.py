@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 class ChatMessage(BaseModel):
     role: str # "user" lub "assistant"
@@ -7,8 +7,11 @@ class ChatMessage(BaseModel):
     
 class ChatRequest(BaseModel):
     case_id: int
-    messages: List[ChatMessage] # Pełna historia powiadomień dla zachowania kontekstu chatu
+    messages: List[ChatMessage] 
+    session_id: Optional[str] = None
     
 class ChatResponse(BaseModel):
     answer: str
-    # W Faza 2 możemy tu zwracać linki do dokumentow źródłowych
+
+class ChatHistoryResponse(BaseModel):
+    messages: List[ChatMessage]

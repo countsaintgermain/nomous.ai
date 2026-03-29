@@ -1,29 +1,30 @@
-from pydantic import BaseModel, ConfigDict
-from typing import Optional, List
+from pydantic import BaseModel
+from typing import Optional, List, Any
 from datetime import datetime
 
 class DocumentBase(BaseModel):
     filename: str
-    file_type: str
-    tag: str = "Dokument"
+    tag: Optional[str] = "Dokument"
 
 class DocumentCreate(DocumentBase):
-    case_id: int
+    pass
+
+class DocumentUpdate(BaseModel):
+    document_name: Optional[str] = None
+    tag: Optional[str] = None
+    document_date: Optional[datetime] = None
 
 class DocumentOut(DocumentBase):
     id: int
+    pisp_id: Optional[int] = None
+    document_name: Optional[str] = None
     status: str
-    s3_key: Optional[str]
-    created_at: datetime
-    updated_at: Optional[datetime]
+    created_date: datetime
+    document_date: datetime
+    summary: Optional[str] = None
+    entities: Optional[Any] = None
+    suggested_facts: Optional[List[str]] = None
+    case_id: int
 
-    model_config = ConfigDict(from_attributes=True)
-
-class CaseFactOut(BaseModel):
-    id: int
-    content: str
-    metadata_json: Optional[dict]
-    source_doc_id: Optional[int]
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
+    class Config:
+        from_attributes = True

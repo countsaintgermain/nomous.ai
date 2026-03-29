@@ -3,7 +3,6 @@
 import React, { useState } from 'react'
 import { Send, Bot, User, X, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 
 interface Message {
@@ -60,7 +59,7 @@ export function DocumentChat({
                 </Button>
             </div>
 
-            <ScrollArea className="flex-1 p-4">
+            <div className="flex-1 overflow-y-auto min-h-0 p-4">
                 <div className="space-y-4">
                     {messages.map((m) => (
                         <div key={m.id} className={cn("flex gap-3", m.role === 'user' ? "justify-end" : "justify-start")}>
@@ -80,7 +79,7 @@ export function DocumentChat({
                         </div>
                     )}
                 </div>
-            </ScrollArea>
+            </div>
 
             <form onSubmit={handleSubmit} className="p-3 border-t border-border bg-background/50 backdrop-blur flex gap-2">
                 <input

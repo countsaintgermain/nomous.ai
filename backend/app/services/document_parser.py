@@ -2,7 +2,7 @@ import os
 from pinecone import Pinecone, ServerlessSpec
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from app.core.config import settings
 from sqlalchemy.orm import Session
@@ -27,7 +27,7 @@ def parse_and_vectorize(db: Session, doc_id: int):
         if index_name not in [idx.name for idx in pc.list_indexes()]:
             pc.create_index(
                 name=index_name,
-                dimension=768, # Gemini embedding-001
+                dimension=768, 
                 metric='cosine',
                 spec=ServerlessSpec(cloud='aws', region='us-east-1')
             )
@@ -46,7 +46,11 @@ def parse_and_vectorize(db: Session, doc_id: int):
 
         # 5. Dodanie metadanych (Namespace = Case ID, aby chronić separację spraw pomiędzy uzytkownikami!)
         namespace_id = f"case_{doc.case_id}"
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
+        embeddings = OpenAIEmbeddings(
+            model="text-embedding-3-small",
+            dimensions=768,
+            api_key=os.getenv("OPENAI_API_KEY")
+        )
         
         # 6. Wypchnięcie do Pinecone (Wektoryzacja)
         vectorstore = PineconeVectorStore.from_documents(

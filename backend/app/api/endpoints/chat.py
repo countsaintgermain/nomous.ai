@@ -1,15 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from typing import List
 from app.core.database import get_db
 from app.models.case import Case
-from app.schemas.chat import ChatRequest
-from app.services.chat_service import get_rag_chain_for_case
+from app.schemas.chat import ChatRequest, ChatMessage as ChatMsgSchema, ChatHistoryResponse
+from app.services.chat_service import get_rag_chain_for_case, get_session_history
 
-router = APIRouter()
+router = APIRouter(redirect_slashes=False)
 CURRENT_USER_ID = 1
 
-@router.post("/", summary="Chat with Case Documents")
+@router.post("", summary="Chat with Case Documents")
 async def chat_with_case(
     request: ChatRequest,
     db: Session = Depends(get_db)
@@ -23,16 +24,55 @@ async def chat_with_case(
     if not last_user_message:
         raise HTTPException(status_code=400, detail="Empty message received")
 
+    session_id = request.session_id or f"case_{request.case_id}"
+
     # Inicjujemy łańcuch
     rag_chain = get_rag_chain_for_case(case.id)
     
     # Zamieniamy prompt na stream generator (Vercel AI oczekuje Data Stream Protocol)
     import json
     async def generate_response():
-        # Uzywamy astream dla strumieniowania asynchronicznego
-        async for chunk in rag_chain.astream({"input": last_user_message}):
-            if "answer" in chunk:
-                # Zwracamy chunk sformatowany jako '0:"tekst"\n' zgodnie z Vercel AI SDK
-                yield f'0:{json.dumps(chunk["answer"])}\n'
+        print(f"Nomous.ia: Rozpoczynam generowanie dla pytania: {last_user_message} (Session: {session_id})")
+        try:
+            # Przekazujemy session_id w configu dla RunnableWithMessageHistory
+            config = {"configurable": {"session_id": session_id}}
+            async for chunk in rag_chain.astream({"input": last_user_message}, config=config):
+                if chunk:
+                    yield f'0:{json.dumps(chunk)}\n'
+        except Exception as e:
+            print(f"Nomous.ia: BŁĄD GENERATORA: {e}")
+            import traceback
+            print(traceback.format_exc())
                 
-    return StreamingResponse(generate_response(), media_type="text/plain")
+    return StreamingResponse(
+        generate_response(), 
+        media_type="text/plain",
+        headers={
+            "X-Vercel-AI-Data-Stream": "v1",
+            "Content-Type": "text/plain; charset=utf-8",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
+
+@router.get("/{case_id}/history", response_model=ChatHistoryResponse)
+async def get_chat_history(
+    case_id: int,
+    session_id: str = None,
+    db: Session = Depends(get_db)
+):
+    # Weryfikacja dostępu
+    case = db.query(Case).filter(Case.id == case_id, Case.user_id == CURRENT_USER_ID).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found or unauthorized")
+    
+    sid = session_id or f"case_{case_id}"
+    history = get_session_history(sid)
+    
+    # Konwersja langchain messages na nasz schemat
+    messages = []
+    for msg in history.messages:
+        role = "user" if msg.type == "human" else "assistant"
+        messages.append(ChatMsgSchema(role=role, content=msg.content))
+        
+    return ChatHistoryResponse(messages=messages)
