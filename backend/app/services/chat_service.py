@@ -1,17 +1,17 @@
 import os
-from pinecone import Pinecone
 from langchain_openai import OpenAIEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.output_parsers import StrOutputParser
-from langchain_pinecone import PineconeVectorStore
 from langchain_community.chat_message_histories import SQLChatMessageHistory
 from app.core.config import settings
 
 from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
 from app.services.saos_tools import search_saos_judgments, get_saos_judgment_details
+from app.core.database import SessionLocal
+from app.models.document import Document, DocumentChunk
 
 def get_session_history(session_id: str):
     return SQLChatMessageHistory(
@@ -20,29 +20,34 @@ def get_session_history(session_id: str):
         table_name="chat_messages"
     )
 
+def retrieve_case_context(query: str, case_id: int) -> str:
+    """Wyszukuje najbardziej pasujące fragmenty dokumentów dla danej sprawy z bazy wektorowej PostgreSQL."""
+    try:
+        embeddings_model = OpenAIEmbeddings(
+            model="text-embedding-3-small",
+            dimensions=768,
+            api_key=os.getenv("OPENAI_API_KEY")
+        )
+        query_vector = embeddings_model.embed_query(query)
+
+        with SessionLocal() as db:
+            chunks = db.query(DocumentChunk).join(Document).filter(
+                Document.case_id == case_id
+            ).order_by(
+                DocumentChunk.embedding.cosine_distance(query_vector)
+            ).limit(10).all()
+            
+            if not chunks:
+                return "Brak dokumentów w aktówce dla tej sprawy."
+                
+            return "\n\n".join([chunk.content for chunk in chunks])
+    except Exception as e:
+        import logging
+        logging.error(f"Error retrieving context from pgvector: {e}")
+        return ""
+
 def get_rag_chain_for_case(case_id: int):
-    # 1. Połączenie z Pinecone
-    pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-    index_name = os.getenv("PINECONE_INDEX_NAME", "nomous-dev-index")
-    
-    # 2. Inicjalizacja poszukiwaczy
-    embeddings = OpenAIEmbeddings(
-        model="text-embedding-3-small",
-        dimensions=768,
-        api_key=os.getenv("OPENAI_API_KEY")
-    )
-    
-    vectorstore = PineconeVectorStore(
-        index_name=index_name, 
-        embedding=embeddings,
-        namespace=f"case_{case_id}"
-    )
-    
-    retriever = vectorstore.as_retriever(
-        search_kwargs={"k": 10} 
-    )
-    
-    # 3. Model Gemini 1.5 (obsługuje tool calling lepiej niż 3 pro preview)
+    # 1. Model Gemini 1.5 (obsługuje tool calling lepiej niż 3 pro preview)
     llm = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash", 
         google_api_key=os.getenv("GOOGLE_API_KEY"),
@@ -50,10 +55,10 @@ def get_rag_chain_for_case(case_id: int):
         streaming=True 
     )
 
-    # 4. Narzędzia (Tools)
+    # 2. Narzędzia (Tools)
     tools = [search_saos_judgments, get_saos_judgment_details]
 
-    # 5. Prompt Systemowy z Historią i wsparciem dla narzędzi
+    # 3. Prompt Systemowy z Historią i wsparciem dla narzędzi
     prompt = ChatPromptTemplate.from_messages([
         ("system", "Jesteś zaawansowanym Asystentem Prawnym platformy Nomous.ia.\n"
                    "Masz dostęp do bazy wiedzy bieżącej sprawy oraz do systemu orzecznictwa SAOS.\n"
@@ -68,14 +73,11 @@ def get_rag_chain_for_case(case_id: int):
         ("human", "{input}"),
         MessagesPlaceholder(variable_name="agent_scratchpad"),
     ])
-    
-    def format_docs(docs):
-        return "\n\n".join(doc.page_content for doc in docs)
 
-    # 6. Tworzenie Agenta
+    # 4. Tworzenie Agenta
     agent = create_tool_calling_agent(llm, tools, prompt)
     
-    # 7. Agent Executor
+    # 5. Agent Executor
     agent_executor = AgentExecutor(
         agent=agent, 
         tools=tools, 
@@ -83,7 +85,7 @@ def get_rag_chain_for_case(case_id: int):
         return_intermediate_steps=False
     ).with_config({"run_name": "NomousChatAgent"})
 
-    # 8. Dodanie pamięci (SQLChatMessageHistory)
+    # 6. Dodanie pamięci (SQLChatMessageHistory)
     with_message_history = RunnableWithMessageHistory(
         agent_executor,
         get_session_history,
@@ -93,8 +95,10 @@ def get_rag_chain_for_case(case_id: int):
     
     # Wstrzyknięcie kontekstu retrievera (wrapper)
     async def agent_with_context(input_data, config):
-        docs = await retriever.ainvoke(input_data["input"])
-        context = format_docs(docs)
+        import asyncio
+        # Uruchamiamy synchroniczny dostęp do bazy w osobnym wątku
+        context = await asyncio.to_thread(retrieve_case_context, input_data["input"], case_id)
+        
         return await with_message_history.ainvoke(
             {"input": input_data["input"], "context": context},
             config=config

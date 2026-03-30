@@ -17,12 +17,13 @@ langchain-core>=1.2.0
 langchain-google-genai>=2.0.0
 langchain-openai==1.1.2
 google-generativeai>=0.8.0
-langchain-pinecone>=0.2.13
+pgvector>=0.3.2
+langchain-postgres>=0.0.12
 langchain-text-splitters>=0.3.0
 langsmith>=0.3.0
 
 # Pinning for 3.13 stability
-pinecone[asyncio]>=7.3.0
+
 tiktoken>=0.12.0
 
 # Tools

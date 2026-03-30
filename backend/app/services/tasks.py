@@ -2,11 +2,9 @@ import os
 from google import genai
 from app.core.worker import broker
 from app.core.database import SessionLocal
-from app.models.document import Document
-from pinecone import Pinecone, ServerlessSpec
+from app.models.document import Document, DocumentChunk
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
-from langchain_pinecone import PineconeVectorStore
 from langchain_core.documents import Document as LangchainDocument
 from langchain_core.prompts import PromptTemplate
 import pdfplumber
@@ -111,29 +109,32 @@ def process_document_ocr_task(doc_id: int):
             print(f"Nomous.ia Gemini error: {e}")
             doc.summary = "Dokument został wgrany, ale analiza AI jest w toku."
 
-        # 2. Wektoryzacja
+        # 2. Wektoryzacja (pgvector)
         try:
-            embeddings = OpenAIEmbeddings(
+            embeddings_model = OpenAIEmbeddings(
                 model="text-embedding-3-small",
                 dimensions=768,
                 api_key=os.getenv("OPENAI_API_KEY")
             )
             
-            namespace = f"case_{doc.case_id}" # Ujednolicony namespace dla całej sprawy
-            lc_doc = LangchainDocument(
-                page_content=extracted_text, 
-                metadata={"source": doc.filename, "doc_id": doc.id, "case_id": doc.case_id}
-            )
             text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-            chunks = text_splitter.split_documents([lc_doc])
+            # Dzielimy ekstrahowany tekst
+            chunks_text = text_splitter.split_text(extracted_text)
             
-            PineconeVectorStore.from_documents(
-                chunks, 
-                embeddings, 
-                index_name=os.getenv("PINECONE_INDEX_NAME", "nomous-dev-index"), 
-                namespace=namespace
-            )
-            doc.pinecone_namespace = namespace
+            if chunks_text:
+                # Generujemy wektory grupowo
+                embeddings = embeddings_model.embed_documents(chunks_text)
+                
+                # Zapisujemy do bazy PostgreSQL
+                db_chunks = []
+                for text, embedding in zip(chunks_text, embeddings):
+                    db_chunks.append(DocumentChunk(
+                        document_id=doc.id,
+                        content=text,
+                        embedding=embedding
+                    ))
+                db.add_all(db_chunks)
+
             doc.status = "ready"
         except Exception as e:
             print(f"Nomous.ia Wektoryzacja error: {e}")
@@ -147,3 +148,4 @@ def process_document_ocr_task(doc_id: int):
             db.commit()
     finally:
         db.close()
+
