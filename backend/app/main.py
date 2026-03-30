@@ -21,7 +21,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.api.endpoints import cases, documents, chat, facts, test_stream
+from app.api.endpoints import cases, documents, chat, facts, test_stream, saos
 
 @app.get("/")
 def read_root():
@@ -30,5 +30,6 @@ def read_root():
 app.include_router(cases.router, prefix="/api/cases", tags=["cases"])
 app.include_router(documents.router, prefix="/api/cases", tags=["documents"])
 app.include_router(facts.router, prefix="/api/cases", tags=["facts"])
+app.include_router(saos.router, prefix="/api/saos", tags=["saos"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(test_stream.router, prefix="/api/test", tags=["test"])

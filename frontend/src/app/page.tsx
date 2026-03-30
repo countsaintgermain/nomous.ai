@@ -8,9 +8,10 @@ import { Briefcase } from "@/components/Briefcase"
 import { FactsView } from "@/components/FactsView"
 import { TopBar } from "@/components/TopBar"
 import { PispView } from "@/components/PispView"
+import { SaosView } from "@/components/SaosView"
 import { type Case } from "@/lib/types"
 
-export type ViewState = 'overview' | 'briefcase' | 'facts' | 'pisp'
+export type ViewState = 'overview' | 'briefcase' | 'facts' | 'pisp' | 'saos'
 
 export default function Home() {
     const [cases, setCases] = useState<Case[]>([])
@@ -97,6 +98,7 @@ export default function Home() {
                             {activeView === 'briefcase' && <Briefcase caseId={activeCase.id} onAnalyze={(docId, filename) => console.log('analyze', docId)} />}
                             {activeView === 'facts' && <FactsView caseId={activeCase.id} />}
                             {activeView === 'pisp' && <PispView activeCase={activeCase} />}
+                            {activeView === 'saos' && <SaosView activeCase={activeCase} />}
                         </>
                     )}
 

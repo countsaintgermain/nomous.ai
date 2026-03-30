@@ -9,6 +9,7 @@ import {
     Briefcase as BriefcaseIcon, 
     Database,
     Gavel,
+    Scale,
     Users,
     Calendar,
     Zap,
@@ -16,7 +17,7 @@ import {
     Mic2
 } from 'lucide-react'
 import { type Case } from '@/lib/types'
-import { type ViewState } from '@/app/page.tsx'
+import { type ViewState } from '@/app/page'
 
 interface SidebarProps {
     activeCase: Case | null;
@@ -89,6 +90,16 @@ export function Sidebar({ activeCase, activeView, onViewChange }: SidebarProps) 
                                             <span>Portal PISP</span>
                                         </div>
                                         {activeView === 'pisp' && <ChevronRight className="h-4 w-4" />}
+                                    </button>
+                                    <button
+                                        onClick={() => onViewChange('saos')}
+                                        className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors ${activeView === 'saos' ? 'text-indigo-500 dark:text-indigo-400 bg-accent' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <Scale className="h-4 w-4 opacity-70" />
+                                            <span>Orzecznictwo SAOS</span>
+                                        </div>
+                                        {activeView === 'saos' && <ChevronRight className="h-4 w-4" />}
                                     </button>
                                 </nav>
                             </div>

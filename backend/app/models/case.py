@@ -33,6 +33,7 @@ class Case(Base):
     hearings = relationship("CaseHearing", back_populates="case", cascade="all, delete-orphan")
     documents = relationship("Document", back_populates="case", cascade="all, delete-orphan")
     relations = relationship("CaseRelation", back_populates="case", cascade="all, delete-orphan")
+    saved_judgments = relationship("SavedJudgment", back_populates="case", cascade="all, delete-orphan")
 
 class CaseRelation(Base):
     __tablename__ = "case_relations"

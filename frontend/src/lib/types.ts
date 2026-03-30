@@ -21,6 +21,41 @@ export interface Case {
     hearings: CaseHearing[];
     documents: Document[];
     relations: CaseRelation[];
+    saved_judgments: SavedJudgment[];
+}
+
+export interface SavedJudgment {
+    id: number;
+    saos_id: number;
+    signature?: string;
+    judgment_date?: string;
+    court_name?: string;
+    court_type?: string;
+    division_name?: string;
+    judges?: { name: string; specialRoles: string[] }[];
+    content?: string;
+    summary?: string;
+    source: 'MANUAL' | 'AI';
+    case_id: number;
+    created_at: string;
+    updated_at?: string;
+}
+
+export interface SaosJudgment {
+    id: number;
+    href: string;
+    courtType: string;
+    courtCases: { caseNumber: string }[];
+    judgmentType?: string;
+    judges?: { name: string; specialRoles: string[] }[];
+    textContent?: string;
+    keywords?: string[];
+    division?: {
+        name: string;
+        court: { name: string };
+    };
+    judgmentDate: string;
+    summary?: string;
 }
 
 export interface CaseRelation {
@@ -64,6 +99,7 @@ export interface CaseHearing {
     judge?: string;
     result?: string;
     signature?: string;
+    subject?: string;
 }
 
 export interface Document {

@@ -21,7 +21,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { Case } from "@/components/CaseDetails"
+import { type Case } from "@/lib/types"
 import { ThemeToggle } from "@/components/ThemeToggle"
 
 interface TopBarProps {

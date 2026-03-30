@@ -26,23 +26,29 @@ async def chat_with_case(
 
     session_id = request.session_id or f"case_{request.case_id}"
 
-    # Inicjujemy łańcuch
-    rag_chain = get_rag_chain_for_case(case.id)
+    # Inicjujemy łańcuch (teraz zwraca funkcję async wrapper)
+    agent_with_context = get_rag_chain_for_case(case.id)
     
     # Zamieniamy prompt na stream generator (Vercel AI oczekuje Data Stream Protocol)
     import json
     async def generate_response():
         print(f"Nomous.ia: Rozpoczynam generowanie dla pytania: {last_user_message} (Session: {session_id})")
         try:
-            # Przekazujemy session_id w configu dla RunnableWithMessageHistory
             config = {"configurable": {"session_id": session_id}}
-            async for chunk in rag_chain.astream({"input": last_user_message}, config=config):
-                if chunk:
-                    yield f'0:{json.dumps(chunk)}\n'
+            # AgentExecutor zwraca słownik z kluczem 'output'
+            response = await agent_with_context({"input": last_user_message}, config=config)
+            output = response.get("output", "")
+            
+            # Jeśli output jest pusty a są pośrednie kroki (choć wyłączyliśmy return_intermediate_steps)
+            if not output and "intermediate_steps" in response:
+                output = "Przeanalizowałem orzecznictwo SAOS. Co dokładnie Cię interesuje?"
+
+            yield f'0:{json.dumps(output)}\n'
         except Exception as e:
             print(f"Nomous.ia: BŁĄD GENERATORA: {e}")
             import traceback
             print(traceback.format_exc())
+            yield f'3:{json.dumps(str(e))}\n' # Error stream
                 
     return StreamingResponse(
         generate_response(), 
