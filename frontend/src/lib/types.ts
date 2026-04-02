@@ -5,6 +5,8 @@ export interface Case {
     signature?: string;
     status: string;
     court?: string;
+    appellation?: string;
+    pisp_id?: number;
     department?: string;
     receipt_date?: string;
     conclusion_date?: string;

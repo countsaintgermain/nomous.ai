@@ -54,10 +54,10 @@ export default function Home() {
             if (syncRes.ok) {
                 // Pobieramy ŚWIEŻE dane sprawy z dokumentami
                 const freshCase = await fetch(`/api/cases/${caseId}`).then(r => r.json());
-                
+
                 // Uaktualnij listę spraw
                 setCases(prev => prev.map(c => c.id === freshCase.id ? freshCase : c));
-                
+
                 // BEZPOŚREDNIO uaktualnij aktywną sprawę, wymuszając re-render
                 setActiveCase(current => current?.id === freshCase.id ? freshCase : current);
             }
@@ -72,12 +72,15 @@ export default function Home() {
         // Natychmiast ustawiamy sprawę, by UI zareagowało
         setActiveCase(c)
         setActiveView('overview')
-        
+
         if (c.signature && c.appellation) {
-            // Aktywacja kontekstu (apelacji) w tle
-            fetch(`/api/pisp/activate-context/${c.id}`, { method: 'POST' })
-                .catch(err => console.error("Error in PISP context:", err));
-            
+            try {
+                // Aktywacja kontekstu (apelacji) i oczekiwanie na jej zakonczenie
+                await fetch(`/api/pisp/activate-context/${c.id}`, { method: 'POST' });
+            } catch (err) {
+                console.error("Error in PISP context:", err);
+            }
+
             // Synchronizacja w tle - teraz z AWAIT by spinner nie zniknął za szybko
             await syncWithPisp(c.id);
         }
@@ -101,7 +104,7 @@ export default function Home() {
                         }
                     })
                     .catch(console.error);
-            }, 10000); 
+            }, 10000);
             return () => clearInterval(interval);
         }
     }, [activeCase?.id, isSyncing]);
@@ -146,9 +149,9 @@ export default function Home() {
                     ) : (
                         <>
                             {activeView === 'overview' && (
-                                <CaseDetails 
-                                    selectedCase={activeCase} 
-                                    onUpdateCase={handleUpdateCase} 
+                                <CaseDetails
+                                    selectedCase={activeCase}
+                                    onUpdateCase={handleUpdateCase}
                                     onTriggerSync={syncWithPisp}
                                 />
                             )}

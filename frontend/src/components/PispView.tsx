@@ -14,7 +14,7 @@ interface PispViewProps {
 
 export function PispView({ activeCase, onUpdateCase }: PispViewProps) {
     const [view, setView] = React.useState<'details' | 'entities' | 'hearings' | 'activities' | 'documents' | 'connections'>('details');
-    const [importingId, setImportingId] = React.useState<number | null>(null);
+    const [importingIds, setImportingIds] = React.useState<number[]>([]);
 
     const formatDate = (dateInput: string | undefined) => {
         if (!dateInput) return '-';
@@ -44,7 +44,7 @@ export function PispView({ activeCase, onUpdateCase }: PispViewProps) {
     };
 
     const handleImport = async (docId: number) => {
-        setImportingId(docId);
+        setImportingIds(prev => [...prev, docId]);
         try {
             const res = await fetch(`/api/pisp/document/${docId}/import`, { method: 'POST' });
             if (res.ok) {
@@ -58,7 +58,7 @@ export function PispView({ activeCase, onUpdateCase }: PispViewProps) {
         } catch (e) {
             console.error("Import error:", e);
         } finally {
-            setImportingId(null);
+            setImportingIds(prev => prev.filter(id => id !== docId));
         }
     };
 
@@ -225,9 +225,9 @@ export function PispView({ activeCase, onUpdateCase }: PispViewProps) {
                                                         size="sm" 
                                                         className="h-8 text-[11px] gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white"
                                                         onClick={() => handleImport(doc.id)}
-                                                        disabled={importingId === doc.id}
+                                                        disabled={importingIds.includes(doc.id)}
                                                     >
-                                                        {importingId === doc.id ? <RefreshCw className="h-3 w-3 animate-spin" /> : <BriefcaseIcon size={12} />}
+                                                        {importingIds.includes(doc.id) ? <RefreshCw className="h-3 w-3 animate-spin" /> : <BriefcaseIcon size={12} />}
                                                         Zapisz w aktówce
                                                     </Button>
                                                 ) : (
