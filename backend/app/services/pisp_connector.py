@@ -34,6 +34,8 @@ class PispConnector:
         self._login_lock = asyncio.Lock()
         self._keep_alive_task: Optional[asyncio.Task] = None
         self._current_appellation: Optional[str] = None
+        self._current_appellation_path: Optional[str] = None
+        self._appellation_lock = asyncio.Lock()
 
     @classmethod
     async def get_instance(cls):
@@ -142,48 +144,50 @@ class PispConnector:
 
     async def ensure_appellation(self, name_or_path: str):
         """Wymusza przełączenie kontekstu pracy na daną apelację."""
-        if not await self.is_logged_in(): 
-            if self._last_credentials:
-                await self.login(**self._last_credentials)
-            else:
-                return False
-        
-        # Mapowanie ścieżki (np. 'lublin') na nazwę wyświetlaną (np. 'lubelska')
-        mapped_name = APPELLATION_MAP.get(name_or_path.lower(), name_or_path.lower())
-        
-        if self._current_appellation == mapped_name:
-            return True
+        async with self._appellation_lock:
+            if not await self.is_logged_in(): 
+                if self._last_credentials:
+                    await self.login(**self._last_credentials)
+                else:
+                    return False
             
-        try:
+            # Mapowanie ścieżki (np. 'lublin') na nazwę wyświetlaną (np. 'lubelska')
+            mapped_name = APPELLATION_MAP.get(name_or_path.lower(), name_or_path.lower())
             
-            # 0. Sprawdzamy, czy aktualna apelacja jest taka, jakiej oczekujemy
-            logger.info(f"Checking if PISP appellation is set to: {mapped_name}")
-            trigger = self.page.get_by_text("Apelacja ", exact=False).first
-            current_apellation_str = await trigger.inner_text()
-            
-            if (mapped_name.lower() not in current_apellation_str.lower()):
-                # 1. Klikamy w aktualną apelację w nagłówku (żeby otworzyć menu)
-                logger.info(f"Switching PISP appellation from {current_apellation_str} to: {mapped_name}")
-                await trigger.click()
-                # Czekamy na pojawienie się opcji w menu
-                await asyncio.sleep(.5)
-                option = self.page.get_by_text(mapped_name, exact=False).first
-                await option.click()
-            
-                # 3. Czekamy na przeładowanie sesji
-                await self.page.wait_for_load_state("networkidle")
+            if self._current_appellation == mapped_name:
+                return True
                 
+            try:
+                
+                # 0. Sprawdzamy, czy aktualna apelacja jest taka, jakiej oczekujemy
+                logger.info(f"Checking if PISP appellation is set to: {mapped_name}")
                 trigger = self.page.get_by_text("Apelacja ", exact=False).first
-                curr_apellation_str = await trigger.inner_text()
-                logger.info(f"PISP appellation switched to: {curr_apellation_str}")
+                current_apellation_str = await trigger.inner_text()
                 
-                self._current_appellation = mapped_name
-            return True
-        except Exception as e:
-            logger.error(f"Failed to switch appellation to {mapped_name}: {e}")
-            # Próba odświeżenia strony i ponownego logowania w razie błędu UI
-            self._current_appellation = None
-            return False
+                if (mapped_name.lower() not in current_apellation_str.lower()):
+                    # 1. Klikamy w aktualną apelację w nagłówku (żeby otworzyć menu)
+                    logger.info(f"Switching PISP appellation from {current_apellation_str} to: {mapped_name}")
+                    await trigger.click()
+                    # Czekamy na pojawienie się opcji w menu
+                    await asyncio.sleep(.5)
+                    option = self.page.get_by_text(mapped_name, exact=False).first
+                    await option.click()
+                
+                    # 3. Czekamy na przeładowanie sesji
+                    await self.page.wait_for_load_state("networkidle")
+                    
+                    trigger = self.page.get_by_text("Apelacja ", exact=False).first
+                    curr_apellation_str = await trigger.inner_text()
+                    logger.info(f"PISP appellation switched to: {curr_apellation_str}")
+                    
+                    self._current_appellation = mapped_name
+                    self._current_appellation_path = name_or_path.lower()
+                return True
+            except Exception as e:
+                logger.error(f"Failed to switch appellation to {mapped_name}: {e}")
+                # Próba odświeżenia strony i ponownego logowania w razie błędu UI
+                self._current_appellation = None
+                return False
 
     async def _keep_alive(self):
         """Pętla utrzymująca sesję PISP przy życiu."""
@@ -251,7 +255,7 @@ class PispConnector:
             return None
 
     async def fetch_binary(self, url: str, lawsuit_id: int = None, appellation: str = None) -> Optional[bytes]:
-        """Pobiera plik binarny poprzez bezpośrednie żądanie API (z lekką nawigacją UI dla odświeżenia tokena)."""
+        """Pobiera plik binarny z wymuszonym odświeżeniem tokena przed strzałem."""
         logger.info(f"PISP BINARY REQUEST: {url} (lawsuit_id={lawsuit_id}, appellation={appellation})")
         if not await self.is_logged_in(): 
             if self._last_credentials:
@@ -262,12 +266,15 @@ class PispConnector:
         # Upewnij się, że mamy dobrą apelację
         await self.ensure_appellation(appellation)
 
-        # Nawigacja do szczegółów sprawy (ale tylko jeśli URL się różni), aby odświeżyć kontekst API
-        details_url = f'https://portal.wroclaw.sa.gov.pl/{appellation}/sprawy/{lawsuit_id}/szczegoly'
-        if self.page.url != details_url:
-            logger.info(f"Lekka nawigacja do szczegółów dla odświeżenia sesji: {details_url}")
-            await self.page.goto(details_url, wait_until="domcontentloaded")
-            await asyncio.sleep(1)
+        # WYMUSZENIE ODŚWIEŻENIA TOKENA (Ping do API z wnętrza strony)
+        try:
+            app_path = appellation.lower() if appellation else self._current_appellation_path
+            if app_path:
+                logger.info(f"Forcing token refresh via internal ping to /{app_path}/api/account...")
+                await self.page.evaluate(f"fetch('/{app_path}/api/account').catch(() => {{}})")
+                await asyncio.sleep(1) # Chwila na zapisanie nowego tokena w localStorage
+        except:
+            pass
 
         try:
             # Pobierz świeży token bezpośrednio z przeglądarki (z retry)
@@ -285,7 +292,7 @@ class PispConnector:
                 
             auth_header = f"Bearer {token}" if not token.startswith("Bearer ") else token
 
-            logger.info(f"Firing API request for binary: {url}")
+            logger.info(f"Firing API request for binary with refreshed token: {url}")
             response = await self.context.request.get(url, headers={
                 "Authorization": auth_header
             })
