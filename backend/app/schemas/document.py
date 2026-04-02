@@ -24,6 +24,8 @@ class DocumentOut(DocumentBase):
     summary: Optional[str] = None
     entities: Optional[Any] = None
     suggested_facts: Optional[List[str]] = None
+    has_pdf: bool = False
+    has_source: bool = False
     case_id: int
 
     class Config:

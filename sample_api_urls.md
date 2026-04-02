@@ -1,4 +1,26 @@
 # Dokumnetacja API
+
+## Sprawy
+
+### URL
+https://portal.wroclaw.sa.gov.pl/lublin/api/dashboard/lawsuits
+
+### response
+[
+    {
+        "id": 7062767,
+        "court": "Sąd Rejonowy w Puławach",
+        "subject": "akt oskarżenia - Ks",
+        "signature": "II K 716/25"
+    },
+    {
+        "id": 6532991,
+        "court": "Sąd Rejonowy Lublin-Wschód w Lublinie z siedzibą w Świdniku",
+        "subject": "warunkowe umorzenie postępowania w trybie art. 336 kpk",
+        "signature": "II K 829/24"
+    }
+]
+
 ## Strony
 
 ### URL
@@ -331,6 +353,7 @@ https://portal.wroclaw.sa.gov.pl/lublin/api/proceeding-views?page=0&size=10&sort
 ### URL
 https://portal.wroclaw.sa.gov.pl/lublin/api/v3/documents?page=0&size=10&sort=publicationDate,desc&lawsuitId.equals=6532991
 
+https://portal.wroclaw.sa.gov.pl/lublin/api/v3/documents/29084724
 ### response
 
 [
@@ -474,3 +497,18 @@ https://portal.wroclaw.sa.gov.pl/lublin/api/relations?page=0&size=20&sort=id,asc
         "relatedId": null
     }
 ]
+
+## Pobieranie plików z PISP
+### format oryginalny
+
+https://portal.wroclaw.sa.gov.pl/doc/documents/web/[file_id]/download
+
+### PDF
+https://portal.wroclaw.sa.gov.pl/doc/documents/web/[file_id]/download/pdf
+
+
+
+
+
+https://portal.wroclaw.sa.gov.pl/doc/documents/web/29084724/download/pdf
+https://portal.wroclaw.sa.gov.pl/doc/documents/web/29084724/download/pdf

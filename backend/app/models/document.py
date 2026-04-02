@@ -1,3 +1,4 @@
+import os
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -47,6 +48,14 @@ class Document(Base):
 
     created_date = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    @property
+    def has_pdf(self) -> bool:
+        return self.s3_key_pdf is not None and os.path.exists(self.s3_key_pdf)
+
+    @property
+    def has_source(self) -> bool:
+        return self.s3_key_source is not None and os.path.exists(self.s3_key_source)
 
 
 class DocumentChunk(Base):

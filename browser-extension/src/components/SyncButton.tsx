@@ -198,7 +198,7 @@ export const SyncButton: React.FC = () => {
                     chrome.runtime.sendMessage({
                         type: 'UPLOAD_FILE_FORM',
                         payload: {
-                            url: `${API_BASE}/api/cases/${target.id}/documents`,
+                            url: `${API_BASE}/api/documents/${target.id}/documents`,
                             fileName: `${d.documentName || 'dokument'}.pdf`,
                             fileBase64: pdfRes.base64,
                             tag: 'PISP',
@@ -221,7 +221,7 @@ export const SyncButton: React.FC = () => {
                     chrome.runtime.sendMessage({
                         type: 'UPLOAD_FILE_FORM',
                         payload: {
-                            url: `${API_BASE}/api/cases/${target.id}/documents`,
+                            url: `${API_BASE}/api/documents/${target.id}/documents`,
                             fileName: `${d.documentName || 'dokument'}.doc`,
                             fileBase64: srcRes.base64,
                             tag: 'PISP',

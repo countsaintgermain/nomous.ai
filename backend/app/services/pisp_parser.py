@@ -41,7 +41,7 @@ def parse_pisp_data_with_ai(raw_texts: Dict[str, str], document_links: List[Dict
 
     try:
         response = client.models.generate_content(
-            model='gemini-3-pro-preview',
+            model='gemini-2.0-flash',
             contents=prompt
         )
         

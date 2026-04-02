@@ -1,18 +1,22 @@
-import os
-from dotenv import load_dotenv
-load_dotenv()
-
-from fastapi import FastAPI
+import logging
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+import os
 
-app = FastAPI(
-    title="Nomous.ia API",
-    description="Backend services for Nomous MVP",
-    version="1.0.0",
-    redirect_slashes=False
-)
+from app.api.endpoints import cases, documents, chat, facts, test_stream, saos, pisp
+from app.core.database import engine, Base
 
-# Konfiguracja CORS
+# Create tables
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI(title="Nomous.ia API")
+
+# Configure Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,15 +25,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.api.endpoints import cases, documents, chat, facts, test_stream, saos
+# Routes
+app.include_router(cases.router, prefix="/api/cases", tags=["cases"])
+app.include_router(documents.router, prefix="/api/documents", tags=["documents"])
+app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
+app.include_router(facts.router, prefix="/api/facts", tags=["facts"])
+app.include_router(saos.router, prefix="/api/saos", tags=["saos"])
+app.include_router(pisp.router, prefix="/api/pisp", tags=["pisp"])
+app.include_router(test_stream.router, prefix="/api/test-stream", tags=["test"])
+
+# Static files for uploads
+os.makedirs("/app/uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="/app/uploads"), name="uploads")
 
 @app.get("/")
-def read_root():
-    return {"status": "ok", "message": "Nomous.ia API is running on Python 3.13"}
-
-app.include_router(cases.router, prefix="/api/cases", tags=["cases"])
-app.include_router(documents.router, prefix="/api/cases", tags=["documents"])
-app.include_router(facts.router, prefix="/api/cases", tags=["facts"])
-app.include_router(saos.router, prefix="/api/saos", tags=["saos"])
-app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
-app.include_router(test_stream.router, prefix="/api/test", tags=["test"])
+async def root():
+    return {"message": "Nomous.ia API is running"}

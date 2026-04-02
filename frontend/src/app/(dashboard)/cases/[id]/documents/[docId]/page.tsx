@@ -30,7 +30,7 @@ export default function DocumentDetailsPage() {
 
     const fetchDocument = async () => {
         try {
-            const res = await fetch(`/api/cases/${caseId}/documents/${docId}`)
+            const res = await fetch(`/api/documents/${caseId}/documents/${docId}`)
             if (!res.ok) throw new Error('Nie udało się pobrać szczegółów dokumentu')
             const data = await res.json()
             setDoc(data)
@@ -55,12 +55,12 @@ export default function DocumentDetailsPage() {
     }, [caseId, docId, doc?.status])
 
     const handlePreviewPdf = () => {
-        window.open(`/api/cases/${caseId}/documents/${docId}/download?format=pdf`, '_blank')
+        window.open(`/api/documents/${caseId}/documents/${docId}/download?format=pdf`, '_blank')
     }
 
     const handleDownloadSource = () => {
         const link = document.createElement('a');
-        link.href = `/api/cases/${caseId}/documents/${docId}/download?format=source`;
+        link.href = `/api/documents/${caseId}/documents/${docId}/download?format=source`;
         link.setAttribute('download', doc?.filename || 'dokument');
         document.body.appendChild(link);
         link.click();
@@ -70,7 +70,7 @@ export default function DocumentDetailsPage() {
     const handleRetryAnalysis = async () => {
         try {
             setLoading(true)
-            const res = await fetch(`/api/cases/${caseId}/documents/${docId}/analyze`, { method: 'POST' })
+            const res = await fetch(`/api/documents/${caseId}/documents/${docId}/analyze`, { method: 'POST' })
             if (!res.ok) throw new Error('Nie udało się rozpocząć analizy')
             setTimeout(fetchDocument, 3000)
         } catch (err: any) {
@@ -81,7 +81,7 @@ export default function DocumentDetailsPage() {
 
     const handleSaveDate = async () => {
         try {
-            const res = await fetch(`/api/cases/${caseId}/documents/${docId}`, {
+            const res = await fetch(`/api/documents/${caseId}/documents/${docId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ document_date: editDate })

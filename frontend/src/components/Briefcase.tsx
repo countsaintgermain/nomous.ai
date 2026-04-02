@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { FileText, Plus, Link as LinkIcon, Trash2, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
+import { FileText, Plus, Link as LinkIcon, Trash2, Loader2, CheckCircle2, AlertCircle, Download, ExternalLink, Briefcase as BriefcaseIcon, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -21,11 +21,12 @@ import { getAppLocale } from '@/lib/i18n'
 
 interface Document {
     id: number
+    pisp_id?: number
     filename: string
     document_name?: string
     file_type: string
     tag: string
-    status: 'uploaded' | 'processing' | 'ready' | 'error'
+    status: 'uploaded' | 'processing' | 'ready' | 'error' | 'pisp_remote'
     created_date: string
     document_date: string
 }
@@ -42,6 +43,7 @@ export function Briefcase({
     const [isUploadOpen, setIsUploadOpen] = useState(false)
     const [isLinkOpen, setIsLinkOpen] = useState(false)
     const [uploading, setUploading] = useState(false)
+    const [importingId, setImportingId] = useState<number | null>(null)
     const [url, setUrl] = useState('')
     const [tag, setTag] = useState('Dokument')
     const [file, setFile] = useState<File | null>(null)
@@ -56,7 +58,7 @@ export function Briefcase({
 
     const fetchDocuments = async () => {
         try {
-            const res = await fetch(`/api/cases/${caseId}/documents`)
+            const res = await fetch(`/api/documents/${caseId}/documents`)
             if (!res.ok) throw new Error('Fetch failed')
             const data = await res.json()
             setDocuments(data)
@@ -67,12 +69,33 @@ export function Briefcase({
         }
     }
 
+    const handleImport = async (e: React.MouseEvent, docId: number) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setImportingId(docId)
+        try {
+            const res = await fetch(`/api/pisp/document/${docId}/import`, { method: 'POST' })
+            if (!res.ok) throw new Error('Import failed')
+            fetchDocuments()
+        } catch (err) {
+            console.error("Import error:", err)
+        } finally {
+            setImportingId(null)
+        }
+    }
+
+    const handlePreview = (e: React.MouseEvent, pispId: number) => {
+        e.preventDefault()
+        e.stopPropagation()
+        window.open(`/api/pisp/document/${pispId}/preview`, '_blank')
+    }
+
     const handleAnalyze = async (e: React.MouseEvent, docId: number) => {
         e.preventDefault()
         e.stopPropagation()
         try {
             setUploading(true)
-            const res = await fetch(`/api/cases/${caseId}/documents/${docId}/analyze`, { method: 'POST' })
+            const res = await fetch(`/api/documents/${caseId}/documents/${docId}/analyze`, { method: 'POST' })
             if (!res.ok) throw new Error('Analysis failed to start')
             fetchDocuments()
         } catch (err) {
@@ -91,7 +114,7 @@ export function Briefcase({
     const confirmDelete = async () => {
         if (!docToDelete) return
         try {
-            await fetch(`/api/cases/${caseId}/documents/${docToDelete}`, { method: 'DELETE' })
+            await fetch(`/api/documents/${caseId}/documents/${docToDelete}`, { method: 'DELETE' })
             fetchDocuments()
         } catch (err) {
             console.error('Delete failed:', err)
@@ -108,7 +131,7 @@ export function Briefcase({
         formData.append('tag', tag)
 
         try {
-            await fetch(`/api/cases/${caseId}/documents`, {
+            await fetch(`/api/documents/${caseId}/documents`, {
                 method: 'POST',
                 body: formData,
             })
@@ -245,16 +268,20 @@ export function Briefcase({
 
             <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-muted">
                 <div className="max-w-4xl mx-auto space-y-4">
-                    {documents.map((doc) => (
-                        <Card
-                            key={doc.id}
-                            className="bg-card border-border hover:border-indigo-500/50 hover:bg-accent/50 transition-all cursor-pointer group"
-                            onClick={() => {
-                                if (doc.status === 'ready' || doc.status === 'error') {
-                                    router.push(`/cases/${caseId}/documents/${doc.id}`)
-                                }
-                            }}
-                        >
+                        {documents.filter(doc => doc.status !== 'pisp_remote').map((doc) => {
+                            const downloadUrl = `/api/documents/${caseId}/documents/${doc.id}/download`;
+                            
+                            return (
+                                <Card
+                                    key={doc.id}
+                                    className="bg-card border-border hover:border-indigo-500/50 hover:bg-accent/50 transition-all cursor-pointer group"
+                                    onClick={() => {
+                                        // Allow navigation for ready, error AND uploaded documents
+                                        if (['ready', 'error', 'uploaded', 'processing'].includes(doc.status)) {
+                                            router.push(`/cases/${caseId}/documents/${doc.id}`)
+                                        }
+                                    }}
+                                >
                             <CardContent className="p-4 flex items-center justify-between">
                                 <div className="flex items-center gap-4 flex-1 min-w-0">
                                     <div className="p-3 bg-muted group-hover:bg-indigo-500/10 rounded-lg transition-colors">
@@ -265,16 +292,17 @@ export function Briefcase({
                                             {doc.document_name}
                                         </div>
                                         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                                            <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-background text-muted-foreground border-border font-normal uppercase">{doc.tag}</Badge>
+                                            <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-background text-muted-foreground border-border font-normal uppercase">{doc.tag || 'PISP'}</Badge>
                                             <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-indigo-500/5 text-indigo-600 dark:text-indigo-400 border-indigo-500/20 font-medium">
                                                 {new Date(doc.document_date).toLocaleDateString(getAppLocale())}
                                             </Badge>
                                             <StatusBadge status={doc.status} />
+
                                             {doc.status === 'uploaded' && (
                                                 <Button
                                                     size="sm"
                                                     variant="ghost"
-                                                    className="text-[10px] h-5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 px-2 font-semibold"
+                                                    className="text-[10px] h-5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 px-2 font-semibold ml-2"
                                                     onClick={(e) => handleAnalyze(e, doc.id)}
                                                 >
                                                     Analizuj Teraz
@@ -295,15 +323,16 @@ export function Briefcase({
                                 </div>
                             </CardContent>
                         </Card>
-                    ))}
-                    {documents.length === 0 && !loading && (
+                            )
+                        })}
+                    {documents.filter(doc => doc.status !== 'pisp_remote').length === 0 && !loading && (
                         <div className="text-center py-24 text-muted-foreground border-2 border-dashed border-border rounded-2xl bg-muted/30">
                             <div className="relative inline-block mb-4">
                                 <FileText className="h-12 w-12 opacity-20" />
                                 <Plus className="h-5 w-5 absolute -bottom-1 -right-1 text-indigo-500 opacity-50" />
                             </div>
                             <p className="text-foreground font-medium">Aktówka jest pusta</p>
-                            <p className="text-xs text-muted-foreground max-w-[200px] mx-auto mt-1">Wgraj dokumenty procesowe, aby AI mogło je przeanalizować.</p>
+                            <p className="text-xs text-muted-foreground max-w-[200px] mx-auto mt-1">Wgraj dokumenty procesowe lub zsynchronizuj z PISP.</p>
                         </div>
                     )}
                 </div>
@@ -314,6 +343,8 @@ export function Briefcase({
 
 function StatusBadge({ status }: { status: string }) {
     switch (status) {
+        case 'pisp_remote':
+            return <Badge variant="outline" className="text-[10px] py-0 gap-1.5 bg-orange-500/10 text-orange-600 border-orange-500/20">Portal PISP</Badge>
         case 'processing':
             return <Badge variant="outline" className="text-[10px] py-0 gap-1.5 opacity-80 bg-accent text-accent-foreground border-border"><Loader2 className="h-2.5 w-2.5 animate-spin" /> Analiza...</Badge>
         case 'ready':
@@ -321,6 +352,6 @@ function StatusBadge({ status }: { status: string }) {
         case 'error':
             return <Badge variant="outline" className="text-[10px] py-0 gap-1.5 text-red-600 dark:text-red-400 bg-red-500/10 border-red-500/20"><AlertCircle className="h-2.5 w-2.5" /> Błąd</Badge>
         default:
-            return <Badge variant="outline" className="text-[10px] py-0 bg-muted text-muted-foreground border-border">Wgrany</Badge>
+            return <Badge variant="outline" className="text-[10px] py-0 bg-muted text-muted-foreground border-border">W aktówce</Badge>
     }
 }

@@ -63,7 +63,7 @@ export function ChatArea({
         formData.append("case_id", caseId.toString())
 
         try {
-            const res = await fetch("/api/cases/" + caseId + "/documents", {
+            const res = await fetch("/api/documents/" + caseId + "/documents", {
                 method: "POST",
                 body: formData,
             })

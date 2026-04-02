@@ -13,8 +13,10 @@ from app.models.document import Document
 from app.schemas.case import CaseCreate, CaseOut, CaseUpdate
 from app.schemas.pisp import PispAiSyncRequest
 from app.services.pisp_parser import parse_pisp_data_with_ai
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 CURRENT_USER_ID = 1
 
@@ -59,6 +61,9 @@ def create_case(case_in: CaseCreate, db: Session = Depends(get_db)):
         title=case_in.title,
         description=case_in.description,
         signature=case_in.signature,
+        pisp_id=case_in.pisp_id,
+        appellation=case_in.appellation,
+        court=case_in.court,
         user_id=CURRENT_USER_ID,
         status="new"
     )
@@ -72,9 +77,8 @@ def sync_pisp_data(case_id: int, request: PispAiSyncRequest, db: Session = Depen
     try:
         if request.structured_data:
             sync_data = request.structured_data
-            print(f"PISP Sync: Received structured_data with keys: {sync_data.dict().keys()}")
-            if hasattr(sync_data, 'relations'):
-                print(f"PISP Sync: Relations count in payload: {len(sync_data.relations)}")
+            logger.info(f"PISP Sync: Received structured_data for case {case_id}")
+            logger.info(f"PISP Sync: Docs={len(sync_data.documents)}, Entities={len(sync_data.entities)}, Activities={len(sync_data.activities)}, Hearings={len(sync_data.hearings)}, Relations={len(sync_data.relations)}")
         else:
             sync_data = parse_pisp_data_with_ai(request.raw_texts, [d.dict() for d in request.document_links])
 
@@ -166,7 +170,7 @@ def sync_pisp_data(case_id: int, request: PispAiSyncRequest, db: Session = Depen
                     writing_attachment_type=d.writingAttachmentType, docs_count=d.docsCount,
                     download_link=d.downloadLink, 
                     source_download_link=getattr(d, 'sourceDownloadLink', None),
-                    tag="PISP", status="uploaded"
+                    tag="PISP", status="pisp_remote"
                 )
                 db.add(db_doc)
                 existing_d_ids.add(d.id)

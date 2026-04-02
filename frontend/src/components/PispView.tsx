@@ -1,48 +1,69 @@
 'use client'
 
 import React from 'react'
-import { Gavel, Users, Calendar, History, Link as LinkIcon, FileText, Building2, Scale, Eye, Download } from 'lucide-react'
+import { Gavel, Users, Calendar, History, Link as LinkIcon, FileText, Building2, Scale, Eye, Download, ShieldCheck, ExternalLink, Briefcase as BriefcaseIcon, RefreshCw } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { type Case, type CaseEntity, type CaseActivity, type CaseHearing, type Document } from '@/lib/types'
 import { getAppLocale } from '@/lib/i18n'
 
 interface PispViewProps {
     activeCase: Case;
+    onUpdateCase?: (updatedCase: Case) => void;
 }
 
-export function PispView({ activeCase }: PispViewProps) {
+export function PispView({ activeCase, onUpdateCase }: PispViewProps) {
     const [view, setView] = React.useState<'details' | 'entities' | 'hearings' | 'activities' | 'documents' | 'connections'>('details');
+    const [importingId, setImportingId] = React.useState<number | null>(null);
 
     const formatDate = (dateInput: string | undefined) => {
         if (!dateInput) return '-';
         try {
             const date = new Date(dateInput);
-            if (isNaN(date.getTime())) return dateInput;
-            return date.toLocaleString(getAppLocale(), {
+            return date.toLocaleString('pl-PL', {
                 year: 'numeric',
                 month: '2-digit',
                 day: '2-digit',
                 hour: '2-digit',
                 minute: '2-digit'
             });
-        } catch {
-            return dateInput;
-        }
+        } catch (e) { return dateInput; }
     };
 
-    const formatDateOnly = (dateInput: string | undefined) => {
+    const formatDateOnly = (dateInput: string | undefined | Date) => {
         if (!dateInput) return '-';
         try {
-            const date = new Date(dateInput);
-            if (isNaN(date.getTime())) return dateInput;
-            return date.toLocaleDateString(getAppLocale());
-        } catch {
-            return dateInput;
+            const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+            return date.toLocaleDateString('pl-PL');
+        } catch (e) { return String(dateInput); }
+    };
+
+    const handlePreview = (pispId: number) => {
+        const url = `/api/pisp/document/${pispId}/preview`;
+        window.open(url, '_blank');
+    };
+
+    const handleImport = async (docId: number) => {
+        setImportingId(docId);
+        try {
+            const res = await fetch(`/api/pisp/document/${docId}/import`, { method: 'POST' });
+            if (res.ok) {
+                // Po udanym imporcie pobieramy świeże dane o sprawie i wymuszamy re-render
+                const updatedCaseRes = await fetch(`/api/cases/${activeCase.id}`);
+                if (updatedCaseRes.ok) {
+                    const freshCase = await updatedCaseRes.json();
+                    if (onUpdateCase) onUpdateCase(freshCase);
+                }
+            }
+        } catch (e) {
+            console.error("Import error:", e);
+        } finally {
+            setImportingId(null);
         }
     };
 
     const renderEntities = () => (
-        <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+        <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[600px]">
                     <thead>
@@ -78,7 +99,7 @@ export function PispView({ activeCase }: PispViewProps) {
     );
 
     const renderHearings = () => (
-        <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+        <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[600px]">
                     <thead>
@@ -113,7 +134,7 @@ export function PispView({ activeCase }: PispViewProps) {
     );
 
     const renderActivities = () => (
-        <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+        <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[600px]">
                     <thead>
@@ -145,21 +166,20 @@ export function PispView({ activeCase }: PispViewProps) {
     );
 
     const renderDocuments = () => (
-        <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+        <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[600px]">
                     <thead>
                         <tr className="bg-muted/50 text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
                             <th className="px-4 py-3 font-semibold w-2/3">Nazwa dokumentu</th>
-                            <th className="px-4 py-3 font-semibold w-1/3 text-right">Pobieranie</th>
+                            <th className="px-4 py-3 font-semibold w-1/3 text-right">Dostępne akcje</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
                         {activeCase.documents?.length > 0 ? (
                             activeCase.documents.map((doc: Document, i: number) => {
-                                const downloadUrl = `/api/cases/${activeCase.id}/documents/${doc.id}/download`;
-                                const originalUrl = `${downloadUrl}?format=source`;
-                                const pdfUrl = `${downloadUrl}?format=pdf`;
+                                const isRemote = doc.status === 'pisp_remote';
+                                const downloadUrl = `/api/documents/${activeCase.id}/documents/${doc.id}/download`;
                                 
                                 return (
                                     <tr key={i} className="hover:bg-accent/30 transition-colors">
@@ -172,31 +192,63 @@ export function PispView({ activeCase }: PispViewProps) {
                                                     <Badge variant="outline" className="text-[9px] py-0 px-1 bg-muted/50 text-muted-foreground border-border font-normal">
                                                         {formatDateOnly(doc.document_date)}
                                                     </Badge>
-                                                    <span className="text-[10px] text-muted-foreground italic">Dokument z SRB</span>
+                                                    {isRemote ? (
+                                                        <span className="text-[10px] text-orange-500 italic">Dostępny w PISP</span>
+                                                    ) : (
+                                                        <span className="text-[10px] text-emerald-500 italic font-semibold">W aktówce</span>
+                                                    )}
                                                 </div>
                                             </div>
                                         </td>
                                         <td className="px-4 py-4 text-right min-w-[300px]">
-                                            <div className="flex flex-col items-end gap-1.5">
-                                                <a href={originalUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-indigo-600 hover:text-indigo-800 text-[11px] font-semibold transition-colors group">
-                                                    <div className="p-1 bg-indigo-600 rounded-sm text-white group-hover:bg-indigo-700 transition-colors">
-                                                        <FileText size={10} />
-                                                    </div>
-                                                    Format źródłowy
-                                                </a>
-                                                <a href={pdfUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-indigo-600 hover:text-indigo-800 text-[11px] font-semibold transition-colors group">
-                                                    <div className="p-1 bg-red-500 rounded-sm text-white group-hover:bg-red-600 transition-colors">
-                                                        <FileText size={10} />
-                                                    </div>
-                                                    Pobierz PDF
-                                                </a>
+                                            <div className="flex items-center justify-end gap-2">
+                                                {/* Podgląd jest zawsze dostępny - albo z PISP, albo z lokalnego PDF */}
+                                                <Button 
+                                                    variant="outline" 
+                                                    size="sm" 
+                                                    className="h-8 text-[11px] gap-1.5 border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+                                                    onClick={() => {
+                                                        if (isRemote) {
+                                                            doc.pisp_id && handlePreview(doc.pisp_id);
+                                                        } else {
+                                                            window.open(`${downloadUrl}?format=pdf`, '_blank');
+                                                        }
+                                                    }}
+                                                >
+                                                    <ExternalLink size={12} />
+                                                    Podgląd
+                                                </Button>
+
+                                                {isRemote ? (
+                                                    <Button 
+                                                        variant="default" 
+                                                        size="sm" 
+                                                        className="h-8 text-[11px] gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white"
+                                                        onClick={() => handleImport(doc.id)}
+                                                        disabled={importingId === doc.id}
+                                                    >
+                                                        {importingId === doc.id ? <RefreshCw className="h-3 w-3 animate-spin" /> : <BriefcaseIcon size={12} />}
+                                                        Zapisz w aktówce
+                                                    </Button>
+                                                ) : (
+                                                    <a href={`${downloadUrl}?format=source`} target="_blank" rel="noopener noreferrer">
+                                                        <Button 
+                                                            variant="ghost" 
+                                                            size="sm" 
+                                                            className="h-8 text-[11px] gap-1.5 text-indigo-600 hover:bg-indigo-50 font-semibold"
+                                                        >
+                                                            <Download size={12} />
+                                                            Oryginał
+                                                        </Button>
+                                                    </a>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
                                 );
                             })
                         ) : (
-                            <tr><td colSpan={3} className="px-4 py-8 text-center text-muted-foreground italic">Aby zobaczyć dokumenty ze sprawy, upewnij się że PISP załączył PDFy.</td></tr>
+                            <tr><td colSpan={3} className="px-4 py-8 text-center text-muted-foreground italic">Brak dokumentów w tej sprawie.</td></tr>
                         )}
                     </tbody>
                 </table>
@@ -252,7 +304,7 @@ export function PispView({ activeCase }: PispViewProps) {
     );
 
     const renderConnections = () => (
-        <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+        <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[600px]">
                     <thead>

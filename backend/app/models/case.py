@@ -11,6 +11,8 @@ class Case(Base):
     description = Column(Text, nullable=True)
     signature = Column(String(100), nullable=True)
     status = Column(String(50), default="new")
+    pisp_id = Column(Integer, nullable=True)
+    appellation = Column(String(100), nullable=True)
     
     court = Column(String(255), nullable=True)
     department = Column(String(255), nullable=True)

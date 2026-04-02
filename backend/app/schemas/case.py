@@ -11,7 +11,7 @@ class CaseEntityOut(BaseModel):
     address: Optional[str] = None
     status: Optional[str] = None
     has_access: Optional[str] = None
-    created_date: datetime
+    # created_date: datetime # Usunięto bo model ma created_date jako String w wielu miejscach lub brak
     class Config: from_attributes = True
 
 class CaseActivityOut(BaseModel):
@@ -21,7 +21,6 @@ class CaseActivityOut(BaseModel):
     signature: Optional[str] = None
     activity: Optional[str] = None
     submitted_by: Optional[str] = None
-    # Czynności z PISP nie mają created_date w bazie, ale możemy dodać dla spójności jeśli model by to miał
     class Config: from_attributes = True
 
 class CaseHearingOut(BaseModel):
@@ -55,7 +54,7 @@ class DocumentOut(BaseModel):
     tag: Optional[str] = None
     status: str
     created_date: datetime
-    document_date: Optional[datetime] = None # Merytoryczna data
+    document_date: Optional[datetime] = None
     suggested_facts: Optional[List[str]] = None
     has_source: bool = False
     has_pdf: bool = False
@@ -66,6 +65,8 @@ class CaseBase(BaseModel):
     description: Optional[str] = None
     signature: Optional[str] = None
     court: Optional[str] = None
+    pisp_id: Optional[int] = None
+    appellation: Optional[str] = None
     department: Optional[str] = None
     receipt_date: Optional[str] = None
     conclusion_date: Optional[str] = None
@@ -84,6 +85,8 @@ class CaseUpdate(BaseModel):
     description: Optional[str] = None
     signature: Optional[str] = None
     status: Optional[str] = None
+    pisp_id: Optional[int] = None
+    appellation: Optional[str] = None
 
 class CaseOut(CaseBase):
     id: int

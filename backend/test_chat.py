@@ -8,14 +8,16 @@ load_dotenv()
 async def test_chat():
     print("Nomous.ia: Inicjalizacja testu czatu...")
     case_id = 1
-    chain = get_rag_chain_for_case(case_id)
+    agent_stream = get_rag_chain_for_case(case_id)
     
     print(f"Nomous.ia: Zadaję pytanie dla sprawy {case_id}...")
     try:
-        async for chunk in chain.astream({"input": "O czym jest ta sprawa?"}):
-            print(f"Chunk: {chunk}")
+        # Nasz nowy wrapper zwraca AsyncGenerator[str, None]
+        async for token in agent_stream({"input": "O czym jest ta sprawa?"}, config={"configurable": {"session_id": "test_session"}}):
+            print(token, end="", flush=True)
+        print("\n\nTest zakończony sukcesem.")
     except Exception as e:
-        print(f"BŁĄD: {e}")
+        print(f"\nBŁĄD: {e}")
         import traceback
         traceback.print_exc()
 

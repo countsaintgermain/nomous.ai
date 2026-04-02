@@ -1,5 +1,6 @@
 'use client'
 
+import React, { useEffect, useState } from 'react'
 import { 
     Settings, 
     LayoutDashboard, 
@@ -26,7 +27,21 @@ interface SidebarProps {
 }
 
 export function Sidebar({ activeCase, activeView, onViewChange }: SidebarProps) {
-    const isPispEnabled = activeCase && (activeCase.signature || activeCase.court);
+    const [pispConnected, setPispConnected] = useState(false);
+    const isPispEnabled = activeCase && activeCase.signature && activeCase.appellation;
+
+    useEffect(() => {
+        const checkStatus = async () => {
+            try {
+                const res = await fetch('/api/pisp/status');
+                const data = await res.json();
+                setPispConnected(data.connected);
+            } catch (e) {}
+        };
+        checkStatus();
+        const interval = setInterval(checkStatus, 30000);
+        return () => clearInterval(interval);
+    }, []);
 
     const navItems = [
         { id: 'overview', label: 'Ogólne', icon: LayoutDashboard },
@@ -74,36 +89,39 @@ export function Sidebar({ activeCase, activeView, onViewChange }: SidebarProps) 
                             ))}
                         </nav>
 
-                        {isPispEnabled && (
-                            <div className="space-y-1">
-                                <div className="px-3 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
-                                    <span className="w-1 h-1 rounded-full bg-indigo-500"></span>
-                                    Integracje
-                                </div>
-                                <nav className="space-y-1">
+                        <div className="space-y-1">
+                            <div className="px-3 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                                <span className="w-1 h-1 rounded-full bg-indigo-500"></span>
+                                Integracje
+                            </div>
+                            <nav className="space-y-1">
+                                {isPispEnabled && (
                                     <button
                                         onClick={() => onViewChange('pisp')}
                                         className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors ${activeView === 'pisp' ? 'text-indigo-500 dark:text-indigo-400 bg-accent' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
                                     >
                                         <div className="flex items-center gap-3">
-                                            <Gavel className="h-4 w-4 opacity-70" />
+                                            <div className="relative">
+                                                <Gavel className="h-4 w-4 opacity-70" />
+                                                <span className={`absolute -top-1 -right-1 w-2 h-2 rounded-full border border-background ${pispConnected ? 'bg-green-500' : 'bg-muted-foreground/30'}`}></span>
+                                            </div>
                                             <span>Portal PISP</span>
                                         </div>
                                         {activeView === 'pisp' && <ChevronRight className="h-4 w-4" />}
                                     </button>
-                                    <button
-                                        onClick={() => onViewChange('saos')}
-                                        className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors ${activeView === 'saos' ? 'text-indigo-500 dark:text-indigo-400 bg-accent' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <Scale className="h-4 w-4 opacity-70" />
-                                            <span>Orzecznictwo SAOS</span>
-                                        </div>
-                                        {activeView === 'saos' && <ChevronRight className="h-4 w-4" />}
-                                    </button>
-                                </nav>
-                            </div>
-                        )}
+                                )}
+                                <button
+                                    onClick={() => onViewChange('saos')}
+                                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors ${activeView === 'saos' ? 'text-indigo-500 dark:text-indigo-400 bg-accent' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <Scale className="h-4 w-4 opacity-70" />
+                                        <span>Orzecznictwo SAOS</span>
+                                    </div>
+                                    {activeView === 'saos' && <ChevronRight className="h-4 w-4" />}
+                                </button>
+                            </nav>
+                        </div>
                     </div>
                 )}
             </div>

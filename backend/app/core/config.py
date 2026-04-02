@@ -8,6 +8,10 @@ class Settings(BaseSettings):
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     SECRET_KEY: str = "zmien_mnie_w_środowisku_produkcyjnym_!@#$%"
     
+    # PISP credentials from env
+    PISP_USERNAME: str = os.getenv("PISP_USERNAME", "")
+    PISP_PASSWD: str = os.getenv("PISP_PASSWD", "")
+    
     class Config:
         case_sensitive = True
 

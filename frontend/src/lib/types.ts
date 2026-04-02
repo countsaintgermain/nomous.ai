@@ -108,7 +108,7 @@ export interface Document {
     filename: string;
     document_name?: string;
     tag: string;
-    status: 'uploaded' | 'processing' | 'ready' | 'error';
+    status: 'uploaded' | 'processing' | 'ready' | 'error' | 'pisp_remote';
     created_date: string;
     document_date?: string;
     summary?: string;

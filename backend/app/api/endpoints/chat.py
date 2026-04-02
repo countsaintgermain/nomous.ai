@@ -26,29 +26,24 @@ async def chat_with_case(
 
     session_id = request.session_id or f"case_{request.case_id}"
 
-    # Inicjujemy łańcuch (teraz zwraca funkcję async wrapper)
-    agent_with_context = get_rag_chain_for_case(case.id)
+    # Inicjujemy agenta (teraz zwraca async generator)
+    agent_stream_wrapper = get_rag_chain_for_case(case.id)
     
-    # Zamieniamy prompt na stream generator (Vercel AI oczekuje Data Stream Protocol)
     import json
     async def generate_response():
-        print(f"Nomous.ia: Rozpoczynam generowanie dla pytania: {last_user_message} (Session: {session_id})")
         try:
             config = {"configurable": {"session_id": session_id}}
-            # AgentExecutor zwraca słownik z kluczem 'output'
-            response = await agent_with_context({"input": last_user_message}, config=config)
-            output = response.get("output", "")
             
-            # Jeśli output jest pusty a są pośrednie kroki (choć wyłączyliśmy return_intermediate_steps)
-            if not output and "intermediate_steps" in response:
-                output = "Przeanalizowałem orzecznictwo SAOS. Co dokładnie Cię interesuje?"
-
-            yield f'0:{json.dumps(output)}\n'
+            # Iterujemy po tokenach generowanych przez LangGraph
+            async for token in agent_stream_wrapper({"input": last_user_message}, config=config):
+                # Vercel AI SDK Data Stream Protocol: 0:"text"\n
+                yield f'0:{json.dumps(token)}\n'
+                
         except Exception as e:
-            print(f"Nomous.ia: BŁĄD GENERATORA: {e}")
             import traceback
-            print(traceback.format_exc())
-            yield f'3:{json.dumps(str(e))}\n' # Error stream
+            logger.error(f"Chat error: {e}")
+            logger.error(traceback.format_exc())
+            yield f'3:{json.dumps(str(e))}\n'
                 
     return StreamingResponse(
         generate_response(), 
@@ -79,6 +74,17 @@ async def get_chat_history(
     messages = []
     for msg in history.messages:
         role = "user" if msg.type == "human" else "assistant"
-        messages.append(ChatMsgSchema(role=role, content=msg.content))
+        content = msg.content
+        if isinstance(content, list):
+            # Wyciągamy tekst z bloków (format OpenAI/LangChain)
+            text_blocks = []
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    text_blocks.append(block.get("text", ""))
+                elif isinstance(block, str):
+                    text_blocks.append(block)
+            content = "\n".join(text_blocks)
+            
+        messages.append(ChatMsgSchema(role=role, content=content))
         
     return ChatHistoryResponse(messages=messages)
