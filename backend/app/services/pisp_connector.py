@@ -190,7 +190,7 @@ class PispConnector:
         logger.info("PISP Keep-alive loop started.")
         while True:
             try:
-                await asyncio.sleep(300) # Co 5 minut
+                await asyncio.sleep(60) # Co 1 minutę
                 if await self.is_logged_in() and not self.page.is_closed():
                     # Losowy "click" lub refresh dashboardu
                     logger.info("Keeping PISP session alive...")
@@ -251,10 +251,7 @@ class PispConnector:
             return None
 
     async def fetch_binary(self, url: str, lawsuit_id: int = None, appellation: str = None) -> Optional[bytes]:
-        """Pobiera plik binarny zgodnie z logiką test_pisp_minimal.py."""
-        import os
-        os.makedirs("/app/uploads/debug", exist_ok=True)
-        
+        """Pobiera plik binarny poprzez bezpośrednie żądanie API (z lekką nawigacją UI dla odświeżenia tokena)."""
         logger.info(f"PISP BINARY REQUEST: {url} (lawsuit_id={lawsuit_id}, appellation={appellation})")
         if not await self.is_logged_in(): 
             if self._last_credentials:
@@ -262,50 +259,15 @@ class PispConnector:
             else:
                 return None
         
-        # Upewnij się, że mamy dobrą apelację (zgodnie z przykładem)
+        # Upewnij się, że mamy dobrą apelację
         await self.ensure_appellation(appellation)
-        await self.page.screenshot(path="/app/uploads/debug/binary_1_after_appellation.png")
-        await asyncio.sleep(1)
 
-        # check if we are on the case details page
-        # Zgodnie z PISP, URL powinien zawierać ścieżkę apelacji, np. /lublin/sprawy/...
+        # Nawigacja do szczegółów sprawy (ale tylko jeśli URL się różni), aby odświeżyć kontekst API
         details_url = f'https://portal.wroclaw.sa.gov.pl/{appellation}/sprawy/{lawsuit_id}/szczegoly'
-        
-        token_debug1 = await self.page.evaluate("localStorage.getItem('authentication_token')")
-        logger.info(f"DEBUG TOKEN [1 - before details nav]: {token_debug1}")
-
         if self.page.url != details_url:
-            logger.info(f"Navigating to details: {details_url}")
-            await self.page.goto(details_url)
-            await self.page.wait_for_load_state('networkidle')
-            await asyncio.sleep(2)
-            await self.page.screenshot(path="/app/uploads/debug/binary_2_after_details_nav.png")
-            
-        token_debug2 = await self.page.evaluate("localStorage.getItem('authentication_token')")
-        logger.info(f"DEBUG TOKEN [2 - after details nav]: {token_debug2}")
-
-        logger.info(f"Clicking on 'Czynności' tab to force refresh")
-        try:
-            await self.page.locator('span.mdc-tab__text-label:has-text("Czynności")').first.click(force=True)
-            await self.page.wait_for_load_state("networkidle")
+            logger.info(f"Lekka nawigacja do szczegółów dla odświeżenia sesji: {details_url}")
+            await self.page.goto(details_url, wait_until="domcontentloaded")
             await asyncio.sleep(1)
-        except Exception as e:
-            logger.warning(f"Could not click Czynności tab: {e}")
-            
-        token_debug3 = await self.page.evaluate("localStorage.getItem('authentication_token')")
-        logger.info(f"DEBUG TOKEN [3 - after Czynności tab]: {token_debug3}")
-
-        logger.info(f"Clicking on 'Dokumenty' tab")
-        try:
-            await self.page.locator('span.mdc-tab__text-label:has-text("Dokumenty")').first.click(force=True)
-            await self.page.wait_for_load_state("networkidle")
-            await self.page.screenshot(path="/app/uploads/debug/binary_3_after_docs_click.png")
-            await asyncio.sleep(2)
-        except Exception as e:
-            logger.warning(f"Could not click Documents tab (might be already there): {e}")
-
-        token_debug4 = await self.page.evaluate("localStorage.getItem('authentication_token')")
-        logger.info(f"DEBUG TOKEN [4 - after Dokumenty tab]: {token_debug4}")
 
         try:
             # Pobierz świeży token bezpośrednio z przeglądarki (z retry)
@@ -319,19 +281,16 @@ class PispConnector:
 
             if not token:
                 logger.error("Could not find authentication_token in localStorage after 5 attempts")
-                await self.page.screenshot(path="/app/uploads/debug/binary_error_no_token.png")
                 return None
                 
             auth_header = f"Bearer {token}" if not token.startswith("Bearer ") else token
 
             logger.info(f"Firing API request for binary: {url}")
-            # Strzał dokładnie jak w test_pisp_minimal.py
             response = await self.context.request.get(url, headers={
                 "Authorization": auth_header
             })
             
             logger.info(f"PISP BINARY RESPONSE STATUS: {response.status}")
-            await self.page.screenshot(path="/app/uploads/debug/binary_4_after_request.png")
             
             if response.ok:
                 body = await response.body()
@@ -343,7 +302,6 @@ class PispConnector:
             return None
         except Exception as e:
             logger.error(f"PISP Binary Exception: {e}")
-            await self.page.screenshot(path="/app/uploads/debug/binary_exception.png")
             return None
 
     def _get_base_url(self) -> str:
