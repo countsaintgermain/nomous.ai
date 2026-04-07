@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense, useMemo, useCallback } from "react"
+import { useRouter, useSearchParams, usePathname } from "next/navigation"
 import { Sidebar } from "@/components/Sidebar"
 import { ChatArea } from "@/components/ChatArea"
 import { CaseDetails } from "@/components/CaseDetails"
@@ -12,16 +13,26 @@ import { SaosView } from "@/components/SaosView"
 import { SettingsView } from "@/components/SettingsView"
 import { type Case } from "@/lib/types"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Loader2, RefreshCw } from "lucide-react"
+import { Loader2 } from "lucide-react"
 
 export type ViewState = 'overview' | 'briefcase' | 'facts' | 'pisp' | 'saos' | 'settings'
 
-export default function Home() {
+function DashboardContent() {
+    const router = useRouter()
+    const searchParams = useSearchParams()
+    const pathname = usePathname()
+
     const [cases, setCases] = useState<Case[]>([])
-    const [activeCase, setActiveCase] = useState<Case | null>(null)
-    const [activeView, setActiveView] = useState<ViewState>('overview')
     const [isPispModalOpen, setIsPispModalOpen] = useState(false)
     const [isSyncing, setIsSyncing] = useState(false)
+
+    // WYCIĄGANIE STANU Z URL (Single Source of Truth)
+    const activeView = (searchParams.get('view') as ViewState) || 'overview'
+    const activeCaseId = searchParams.get('caseId') ? parseInt(searchParams.get('caseId')!) : null
+
+    const activeCase = useMemo(() => {
+        return cases.find(c => c.id === activeCaseId) || null
+    }, [cases, activeCaseId])
 
     // Pobranie listy spraw
     useEffect(() => {
@@ -30,9 +41,6 @@ export default function Home() {
             .then(data => {
                 if (Array.isArray(data)) {
                     setCases(data)
-                    if (data.length > 0 && !activeCase) {
-                        setActiveCase(data[0]);
-                    }
                 } else {
                     setCases([])
                 }
@@ -40,11 +48,41 @@ export default function Home() {
             .catch(err => console.error("Error loading cases:", err))
     }, [])
 
+    // Funkcje zmieniające stan poprzez URL
+    const updateUrl = useCallback((params: Record<string, string | null>) => {
+        const newParams = new URLSearchParams(searchParams.toString())
+        Object.entries(params).forEach(([key, value]) => {
+            if (value === null) {
+                newParams.delete(key)
+            } else {
+                newParams.set(key, value)
+            }
+        })
+        router.push(`${pathname}?${newParams.toString()}`, { scroll: false })
+    }, [pathname, router, searchParams])
+
+    const setActiveView = (view: ViewState) => updateUrl({ view })
+    
+    const handleSelectCase = async (c: Case) => {
+        updateUrl({ caseId: c.id.toString(), view: 'overview' })
+
+        if (c.signature && c.appellation) {
+            try {
+                await fetch(`/api/pisp/activate-context/${c.id}`, { method: 'POST' });
+            } catch (err) {
+                console.error("Error in PISP context:", err);
+            }
+            await syncWithPisp(c.id);
+        }
+    }
+
+    const handleAddCase = (newCase: Case) => {
+        setCases(prev => [newCase, ...prev])
+        updateUrl({ caseId: newCase.id.toString(), view: 'overview' })
+    }
+
     const handleUpdateCase = (updatedCase: Case) => {
         setCases(prev => prev.map(c => c.id === updatedCase.id ? updatedCase : c))
-        if (activeCase?.id === updatedCase.id) {
-            setActiveCase(updatedCase)
-        }
     }
 
     // Logika synchronizacji z PISP
@@ -53,14 +91,8 @@ export default function Home() {
         try {
             const syncRes = await fetch(`/api/pisp/sync/${caseId}`, { method: 'POST' });
             if (syncRes.ok) {
-                // Pobieramy ŚWIEŻE dane sprawy z dokumentami
                 const freshCase = await fetch(`/api/cases/${caseId}`).then(r => r.json());
-
-                // Uaktualnij listę spraw
                 setCases(prev => prev.map(c => c.id === freshCase.id ? freshCase : c));
-
-                // BEZPOŚREDNIO uaktualnij aktywną sprawę, wymuszając re-render
-                setActiveCase(current => current?.id === freshCase.id ? freshCase : current);
             }
         } catch (e) {
             console.error("Sync error:", e);
@@ -69,56 +101,25 @@ export default function Home() {
         }
     }
 
-    const handleSelectCase = async (c: Case) => {
-        // Natychmiast ustawiamy sprawę, by UI zareagowało
-        setActiveCase(c)
-        setActiveView('overview')
-
-        if (c.signature && c.appellation) {
-            try {
-                // Aktywacja kontekstu (apelacji) i oczekiwanie na jej zakonczenie
-                await fetch(`/api/pisp/activate-context/${c.id}`, { method: 'POST' });
-            } catch (err) {
-                console.error("Error in PISP context:", err);
-            }
-
-            // Synchronizacja w tle - teraz z AWAIT by spinner nie zniknął za szybko
-            await syncWithPisp(c.id);
-        }
-    }
-
-    const handleAddCase = (newCase: Case) => {
-        setCases([newCase, ...cases])
-        setActiveCase(newCase)
-        setActiveView('overview')
-    }
-
-    // Polling dla aktywnej sprawy (opcjonalnie, zostawiam dla spójności)
+    // Polling dla aktywnej sprawy
     useEffect(() => {
-        if (activeCase && !isSyncing) {
+        if (activeCaseId && !isSyncing) {
             const interval = setInterval(() => {
-                fetch(`/api/cases/${activeCase.id}`)
+                fetch(`/api/cases/${activeCaseId}`)
                     .then(res => res.json())
                     .then(data => {
-                        if (JSON.stringify(data) !== JSON.stringify(activeCase)) {
-                            handleUpdateCase(data);
+                        if (data && data.id === activeCaseId) {
+                            setCases(prev => prev.map(c => c.id === data.id ? data : c));
                         }
                     })
-                    .catch(console.error);
-            }, 10000);
+                    .catch(() => {});
+            }, 15000);
             return () => clearInterval(interval);
         }
-    }, [activeCase?.id, isSyncing]);
+    }, [activeCaseId, isSyncing]);
 
     return (
-        <div className="flex flex-col h-screen w-full overflow-hidden bg-background text-foreground font-sans">
-            {isSyncing && (
-                <div className="fixed bottom-6 right-6 z-[60] bg-indigo-600 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4">
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                    <span className="text-sm font-medium">Synchronizowanie z PISP...</span>
-                </div>
-            )}
-
+        <div className="flex flex-col h-screen bg-background overflow-hidden">
             <Dialog open={isPispModalOpen} onOpenChange={setIsPispModalOpen}>
                 <DialogContent className="sm:max-w-[425px]">
                     <DialogHeader>
@@ -132,7 +133,7 @@ export default function Home() {
 
             <TopBar
                 cases={cases}
-                activeCaseId={activeCase?.id || null}
+                activeCaseId={activeCaseId}
                 onSelectCase={handleSelectCase}
                 onAddCase={handleAddCase}
             />
@@ -165,9 +166,21 @@ export default function Home() {
                         </>
                     )}
 
-                    {activeView !== 'settings' && <ChatArea key={activeCase?.id || 'none'} caseId={activeCase?.id || null} />}
+                    {activeView !== 'settings' && <ChatArea key={activeCaseId || 'none'} caseId={activeCaseId} />}
                 </div>
             </main>
         </div>
+    )
+}
+
+export default function Home() {
+    return (
+        <Suspense fallback={
+            <div className="flex h-screen items-center justify-center bg-background text-indigo-500">
+                <Loader2 className="h-8 w-8 animate-spin" />
+            </div>
+        }>
+            <DashboardContent />
+        </Suspense>
     )
 }
