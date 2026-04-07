@@ -20,6 +20,7 @@ from app.core.config import settings
 from app.services.saos_tools import search_saos_judgments, get_saos_judgment_details
 from app.core.database import SessionLocal
 from app.models.document import Document, DocumentChunk
+from app.models.settings import AppSettings
 
 logger = logging.getLogger(__name__)
 
@@ -62,12 +63,20 @@ def retrieve_case_context(query: str, case_id: int) -> str:
         return ""
 
 def get_rag_chain_for_case(case_id: int):
+    # Pobranie modelu z ustawień
+    with SessionLocal() as db:
+        app_settings = db.query(AppSettings).first()
+        main_model = app_settings.main_model if app_settings else "gemini-2.5-pro"
+        api_key = app_settings.api_key if app_settings and app_settings.api_key else os.getenv("GOOGLE_API_KEY")
+        use_vertex = app_settings.use_vertex if app_settings else True
+
     # 1. Inicjalizacja Modelu
     llm = ChatGoogleGenerativeAI(
-        model="gemini-3-pro-preview", 
-        google_api_key=os.getenv("GOOGLE_API_KEY"),
+        model=main_model, 
+        google_api_key=api_key,
         temperature=0.1,
-        streaming=True 
+        streaming=True,
+        vertexai=use_vertex
     )
 
     # 2. Narzędzia (Tools)
@@ -99,10 +108,15 @@ def get_rag_chain_for_case(case_id: int):
         ])
         
         chain = prompt | llm_with_tools
+        
+        logger.info(f"Nomous.ia: WYWOŁANIE MODELU GŁÓWNEGO: {main_model} dla case_id: {state['case_id']}")
+        
         response = await chain.ainvoke({
             "messages": state["messages"],
             "context": context or "Brak kontekstu."
         }, config)
+        
+        logger.info(f"Nomous.ia: ODPOWIEDŹ OTRZYMANA z modelu głównego {main_model}")
         
         return {"messages": [response], "context": context}
 

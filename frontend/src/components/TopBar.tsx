@@ -312,13 +312,12 @@ export function TopBar({ cases = [], activeCaseId, onSelectCase, onAddCase }: To
                                             </div>
                                             <div className="space-y-2">
                                                 <label className="text-sm font-medium">Login (E-mail)</label>
-                                                <Input type="text" placeholder="E-mail" value={pispLoginData.username} onChange={e => setPispLoginData({...pispLoginData, username: e.target.value})} required />
+                                                <Input type="text" name="pisp_username" autoComplete="username" placeholder="E-mail" value={pispLoginData.username} onChange={e => setPispLoginData({...pispLoginData, username: e.target.value})} required />
                                             </div>
                                             <div className="space-y-2">
                                                 <label className="text-sm font-medium">Hasło</label>
-                                                <Input type="password" placeholder="Hasło" value={pispLoginData.password} onChange={e => setPispLoginData({...pispLoginData, password: e.target.value})} required />
-                                            </div>
-                                            {pispError && <p className="text-xs text-red-500 font-medium">{pispError}</p>}
+                                                <Input type="password" name="pisp_password" autoComplete="current-password" placeholder="Hasło" value={pispLoginData.password} onChange={e => setPispLoginData({...pispLoginData, password: e.target.value})} required />
+                                            </div>                                            {pispError && <p className="text-xs text-red-500 font-medium">{pispError}</p>}
                                             <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white" disabled={isPispLoading}>
                                                 {isPispLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Połącz z PISP"}
                                             </Button>

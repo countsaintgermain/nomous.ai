@@ -9,11 +9,12 @@ import { FactsView } from "@/components/FactsView"
 import { TopBar } from "@/components/TopBar"
 import { PispView } from "@/components/PispView"
 import { SaosView } from "@/components/SaosView"
+import { SettingsView } from "@/components/SettingsView"
 import { type Case } from "@/lib/types"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Loader2, RefreshCw } from "lucide-react"
 
-export type ViewState = 'overview' | 'briefcase' | 'facts' | 'pisp' | 'saos'
+export type ViewState = 'overview' | 'briefcase' | 'facts' | 'pisp' | 'saos' | 'settings'
 
 export default function Home() {
     const [cases, setCases] = useState<Case[]>([])
@@ -142,7 +143,9 @@ export default function Home() {
                     onViewChange={setActiveView}
                 />
                 <div className="flex-1 flex overflow-hidden min-h-0">
-                    {!activeCase ? (
+                    {activeView === 'settings' ? (
+                        <SettingsView />
+                    ) : !activeCase ? (
                         <div className="flex-1 flex items-center justify-center p-8 bg-muted/20">
                             <div className="text-center text-muted-foreground">Wybierz lub utwórz sprawę na górnym pasku, aby zacząć pracę.</div>
                         </div>
@@ -162,7 +165,7 @@ export default function Home() {
                         </>
                     )}
 
-                    <ChatArea key={activeCase?.id || 'none'} caseId={activeCase?.id || null} />
+                    {activeView !== 'settings' && <ChatArea key={activeCase?.id || 'none'} caseId={activeCase?.id || null} />}
                 </div>
             </main>
         </div>

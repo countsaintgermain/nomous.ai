@@ -4,3 +4,4 @@ from app.models.case import Case
 from app.models.document import Document, DocumentChunk
 from app.models.case_fact import CaseFact
 from app.models.saos import SavedJudgment
+from app.models.settings import AppSettings

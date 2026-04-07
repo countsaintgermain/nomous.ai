@@ -2,7 +2,7 @@ import logging
 import asyncio
 import random
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
-from playwright_stealth import stealth
+from playwright_stealth import Stealth
 from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,8 @@ class PispConnector:
         
         if not self.page or self.page.is_closed():
             self.page = await self.context.new_page()
-            await stealth(self.page)
+            stealth = Stealth()
+            await stealth.apply(self.page)
             self.page.on("request", self._handle_request)
             
             # Start keep-alive loop
@@ -257,59 +258,66 @@ class PispConnector:
     async def fetch_binary(self, url: str, lawsuit_id: int = None, appellation: str = None) -> Optional[bytes]:
         """Pobiera plik binarny z wymuszonym odświeżeniem tokena przed strzałem."""
         logger.info(f"PISP BINARY REQUEST: {url} (lawsuit_id={lawsuit_id}, appellation={appellation})")
-        if not await self.is_logged_in(): 
+        
+        async def perform_request():
+            if not await self.is_logged_in(): 
+                if self._last_credentials:
+                    await self.login(**self._last_credentials)
+                else:
+                    return None
+            
+            # Upewnij się, że mamy dobrą apelację
+            if appellation:
+                await self.ensure_appellation(appellation)
+
+            # Pobierz świeży token bezpośrednio z przeglądarki
+            token = await self.page.evaluate("localStorage.getItem('authentication_token')")
+            if not token:
+                # Fallback do złapanego nagłówka
+                auth_header = self._auth_header
+            else:
+                auth_header = f"Bearer {token}" if not token.startswith("Bearer ") else token
+
+            if not auth_header:
+                logger.error("No auth header available for binary request")
+                return None
+
+            response = await self.context.request.get(url, headers={
+                "Authorization": auth_header,
+                "Referer": self._get_base_url()
+            })
+            
+            if response.status == 401:
+                error_text = await response.text()
+                if "Blacklisted" in error_text or "expired" in error_text:
+                    logger.warning(f"PISP Binary 401: {error_text}. Triggering full re-login...")
+                    return "RELOGIN"
+                return None
+                
+            if response.ok:
+                return await response.body()
+            
+            logger.error(f"PISP Binary Error Status {response.status}: {await response.text()}")
+            return None
+
+        # Pierwsza próba
+        result = await perform_request()
+        
+        # Jeśli wymagany re-login
+        if result == "RELOGIN":
             if self._last_credentials:
+                # Wymuszamy zatrzymanie i start nowej sesji, by mieć świeże ciastka i tokeny
+                await self.stop()
                 await self.login(**self._last_credentials)
+                result = await perform_request()
             else:
                 return None
         
-        # Upewnij się, że mamy dobrą apelację
-        await self.ensure_appellation(appellation)
-
-        # WYMUSZENIE ODŚWIEŻENIA TOKENA (Ping do API z wnętrza strony)
-        try:
-            app_path = appellation.lower() if appellation else self._current_appellation_path
-            if app_path:
-                logger.info(f"Forcing token refresh via internal ping to /{app_path}/api/account...")
-                await self.page.evaluate(f"fetch('/{app_path}/api/account').catch(() => {{}})")
-                await asyncio.sleep(1) # Chwila na zapisanie nowego tokena w localStorage
-        except:
-            pass
-
-        try:
-            # Pobierz świeży token bezpośrednio z przeglądarki (z retry)
-            token = None
-            for attempt in range(5):
-                token = await self.page.evaluate("localStorage.getItem('authentication_token')")
-                if token:
-                    break
-                logger.info(f"Token not found in localStorage, attempt {attempt+1}/5, waiting...")
-                await asyncio.sleep(1)
-
-            if not token:
-                logger.error("Could not find authentication_token in localStorage after 5 attempts")
-                return None
-                
-            auth_header = f"Bearer {token}" if not token.startswith("Bearer ") else token
-
-            logger.info(f"Firing API request for binary with refreshed token: {url}")
-            response = await self.context.request.get(url, headers={
-                "Authorization": auth_header
-            })
+        if isinstance(result, bytes):
+            logger.info(f"PISP BINARY RECEIVED: {len(result)} bytes")
+            return result
             
-            logger.info(f"PISP BINARY RESPONSE STATUS: {response.status}")
-            
-            if response.ok:
-                body = await response.body()
-                logger.info(f"PISP BINARY RECEIVED: {len(body)} bytes")
-                return body
-            
-            error_text = await response.text()
-            logger.error(f"PISP Binary Error Body: {error_text[:500]}")
-            return None
-        except Exception as e:
-            logger.error(f"PISP Binary Exception: {e}")
-            return None
+        return None
 
     def _get_base_url(self) -> str:
         base_url = "https://portal.wroclaw.sa.gov.pl/"
