@@ -89,7 +89,7 @@ def process_document_ocr_task(doc_id: int):
             TEKST: {extracted_text[:15000]}
             """
             
-            response = client.models.generate_content(model='gemini-3-pro-preview', contents=prompt)
+            response = client.models.generate_content(model='gemini-3.1-flash-lite', contents=prompt)
             
             clean_res = response.text.replace("```json", "").replace("```", "").strip()
             analysis_data = json.loads(clean_res)
