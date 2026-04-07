@@ -20,6 +20,7 @@ export default function DocumentDetailsPage() {
 
     const [doc, setDoc] = useState<Document | null>(null)
     const [loading, setLoading] = useState(true)
+    const [retrying, setRetrying] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [factContent, setFactContent] = useState('')
     const [savingFact, setSavingFact] = useState(false)
@@ -69,13 +70,16 @@ export default function DocumentDetailsPage() {
 
     const handleRetryAnalysis = async () => {
         try {
-            setLoading(true)
+            setRetrying(true)
             const res = await fetch(`/api/documents/${caseId}/documents/${docId}/analyze`, { method: 'POST' })
             if (!res.ok) throw new Error('Nie udało się rozpocząć analizy')
-            setTimeout(fetchDocument, 3000)
+            setTimeout(() => {
+                fetchDocument()
+                setRetrying(false)
+            }, 3000)
         } catch (err: any) {
             setError(err.message)
-            setLoading(false)
+            setRetrying(false)
         }
     }
 
@@ -194,9 +198,19 @@ export default function DocumentDetailsPage() {
                 </div>
 
                 <div className="flex gap-3">
-                    <Button onClick={handleRetryAnalysis} variant="outline" size="sm" className="border-border">
-                        <RefreshCw className="mr-2 h-4 w-4" />
-                        Ponów analizę
+                    <Button 
+                        onClick={handleRetryAnalysis} 
+                        variant="outline" 
+                        size="sm" 
+                        className="border-border"
+                        disabled={retrying || doc.status === 'processing'}
+                    >
+                        {retrying || doc.status === 'processing' ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                        )}
+                        {retrying || doc.status === 'processing' ? 'Analizowanie...' : 'Ponów analizę'}
                     </Button>
                     {doc.has_pdf && (
                         <Button onClick={handlePreviewPdf} variant="outline" size="sm" className="border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10">

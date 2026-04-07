@@ -43,6 +43,7 @@ export function Briefcase({
     const [isUploadOpen, setIsUploadOpen] = useState(false)
     const [isLinkOpen, setIsLinkOpen] = useState(false)
     const [uploading, setUploading] = useState(false)
+    const [analyzingId, setAnalyzingId] = useState<number | null>(null)
     const [importingId, setImportingId] = useState<number | null>(null)
     const [url, setUrl] = useState('')
     const [tag, setTag] = useState('Dokument')
@@ -94,14 +95,14 @@ export function Briefcase({
         e.preventDefault()
         e.stopPropagation()
         try {
-            setUploading(true)
+            setAnalyzingId(docId)
             const res = await fetch(`/api/documents/${caseId}/documents/${docId}/analyze`, { method: 'POST' })
             if (!res.ok) throw new Error('Analysis failed to start')
             fetchDocuments()
         } catch (err) {
             console.error('Error starting analysis:', err)
         } finally {
-            setUploading(false)
+            setAnalyzingId(null)
         }
     }
 
@@ -298,14 +299,20 @@ export function Briefcase({
                                             </Badge>
                                             <StatusBadge status={doc.status} />
 
-                                            {doc.status === 'uploaded' && (
+                                            {(doc.status === 'uploaded' || doc.status === 'error') && (
                                                 <Button
                                                     size="sm"
                                                     variant="ghost"
+                                                    disabled={analyzingId === doc.id}
                                                     className="text-[10px] h-5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 px-2 font-semibold ml-2"
                                                     onClick={(e) => handleAnalyze(e, doc.id)}
                                                 >
-                                                    Analizuj Teraz
+                                                    {analyzingId === doc.id ? (
+                                                        <Loader2 className="h-2.5 w-2.5 animate-spin mr-1" />
+                                                    ) : doc.status === 'error' ? (
+                                                        <RefreshCw className="h-2.5 w-2.5 mr-1" />
+                                                    ) : null}
+                                                    {doc.status === 'error' ? 'Ponów Analizę' : 'Analizuj Teraz'}
                                                 </Button>
                                             )}
                                         </div>
