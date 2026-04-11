@@ -56,10 +56,15 @@ interface PispCase {
 }
 
 export function TopBar({ cases = [], activeCaseId, onSelectCase, onAddCase }: TopBarProps) {
+    const [mounted, setMounted] = useState(false)
+    useEffect(() => {
+        setMounted(true)
+    }, [])
+
     const [searchTerm, setSearchTerm] = useState("")
     const [isDialogOpen, setIsDialogOpen] = useState(false)
     
-    // Form state (Manual)
+    // ... rest of state ...
     const [newTitle, setNewTitle] = useState("")
     const [newSignature, setNewSignature] = useState("")
     const [newAppellation, setNewAppellation] = useState("")
@@ -207,8 +212,25 @@ export function TopBar({ cases = [], activeCaseId, onSelectCase, onAddCase }: To
         }
     }
 
+    if (!mounted) {
+        return (
+            <div className="flex h-16 w-full items-center border-b border-border bg-background shrink-0">
+                <div className="flex h-full w-64 items-center gap-2 border-r border-border px-4 font-semibold text-foreground">
+                    <Folders className="h-5 w-5 text-indigo-500 dark:text-indigo-400" />
+                    <span>Nomous.ia</span>
+                </div>
+                <div className="flex flex-1 items-center justify-between px-6">
+                    <div className="flex items-center gap-4 flex-1">
+                        <div className="w-72 h-10 bg-muted animate-pulse rounded-md" />
+                        <div className="w-32 h-10 bg-muted animate-pulse rounded-md" />
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
     return (
-        <div className="flex h-16 items-center border-b border-border bg-background shrink-0">
+        <div className="flex h-16 w-full items-center border-b border-border bg-background shrink-0">
             {/* Logo Section */}
             <div className="flex h-full w-64 items-center gap-2 border-r border-border px-4 font-semibold text-foreground">
                 <Folders className="h-5 w-5 text-indigo-500 dark:text-indigo-400" />

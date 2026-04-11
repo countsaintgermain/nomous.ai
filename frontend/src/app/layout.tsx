@@ -17,15 +17,15 @@ export default function RootLayout({
     children: React.ReactNode
 }) {
     return (
-        <html lang="pl" suppressHydrationWarning>
-            <body className={cn(inter.className, "min-h-screen antialiased selection:bg-primary/30")}>
+        <html lang="pl" suppressHydrationWarning className="h-full w-full">
+            <body className={cn(inter.className, "h-screen w-screen antialiased selection:bg-primary/30 flex overflow-hidden bg-background")}>
                 <ThemeProvider
                     attribute="class"
                     defaultTheme="dark"
                     enableSystem
                     disableTransitionOnChange
                 >
-                    <div className="flex h-screen overflow-hidden">
+                    <div className="flex-1 flex flex-col min-w-full min-h-full w-screen h-screen">
                         {children}
                     </div>
                 </ThemeProvider>

@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { 
     Settings, 
     LayoutDashboard, 
@@ -18,7 +19,8 @@ import {
     Mic2
 } from 'lucide-react'
 import { type Case } from '@/lib/types'
-import { type ViewState } from '@/app/page'
+
+type ViewState = 'overview' | 'briefcase' | 'facts' | 'pisp' | 'saos' | 'settings'
 
 interface SidebarProps {
     activeCase: Case | null;
@@ -26,7 +28,7 @@ interface SidebarProps {
     onViewChange: (view: ViewState) => void;
 }
 
-export function Sidebar({ activeCase, activeView, onViewChange }: SidebarProps) {
+export function Sidebar({ activeCase, activeView }: SidebarProps) {
     const [pispConnected, setPispConnected] = useState(false);
     const isPispEnabled = activeCase && activeCase.signature && activeCase.appellation;
 
@@ -75,9 +77,9 @@ export function Sidebar({ activeCase, activeView, onViewChange }: SidebarProps) 
 
                         <nav className="space-y-1">
                             {navItems.map((item) => (
-                                <button
+                                <Link
                                     key={item.id}
-                                    onClick={() => onViewChange(item.id as ViewState)}
+                                    href={`/cases/${activeCase.id}/${item.id}`}
                                     className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors ${activeView === item.id ? 'text-indigo-500 dark:text-indigo-400 bg-accent' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
                                 >
                                     <div className="flex items-center gap-3">
@@ -85,7 +87,7 @@ export function Sidebar({ activeCase, activeView, onViewChange }: SidebarProps) 
                                         <span>{item.label}</span>
                                     </div>
                                     {activeView === item.id && <ChevronRight className="h-4 w-4" />}
-                                </button>
+                                </Link>
                             ))}
                         </nav>
 
@@ -96,8 +98,8 @@ export function Sidebar({ activeCase, activeView, onViewChange }: SidebarProps) 
                             </div>
                             <nav className="space-y-1">
                                 {isPispEnabled && (
-                                    <button
-                                        onClick={() => onViewChange('pisp')}
+                                    <Link
+                                        href={`/cases/${activeCase.id}/pisp`}
                                         className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors ${activeView === 'pisp' ? 'text-indigo-500 dark:text-indigo-400 bg-accent' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
                                     >
                                         <div className="flex items-center gap-3">
@@ -108,10 +110,10 @@ export function Sidebar({ activeCase, activeView, onViewChange }: SidebarProps) 
                                             <span>Portal PISP</span>
                                         </div>
                                         {activeView === 'pisp' && <ChevronRight className="h-4 w-4" />}
-                                    </button>
+                                    </Link>
                                 )}
-                                <button
-                                    onClick={() => onViewChange('saos')}
+                                <Link
+                                    href={`/cases/${activeCase.id}/saos`}
                                     className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors ${activeView === 'saos' ? 'text-indigo-500 dark:text-indigo-400 bg-accent' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
                                 >
                                     <div className="flex items-center gap-3">
@@ -119,7 +121,7 @@ export function Sidebar({ activeCase, activeView, onViewChange }: SidebarProps) 
                                         <span>Orzecznictwo SAOS</span>
                                     </div>
                                     {activeView === 'saos' && <ChevronRight className="h-4 w-4" />}
-                                </button>
+                                </Link>
                             </nav>
                         </div>
                     </div>
@@ -127,13 +129,13 @@ export function Sidebar({ activeCase, activeView, onViewChange }: SidebarProps) 
             </div>
 
             <div className="p-4 border-t border-border">
-                <button
-                    onClick={() => onViewChange('settings')}
+                <Link
+                    href="/settings"
                     className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${activeView === 'settings' ? 'text-indigo-500 bg-accent' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
                 >
                     <Settings className="h-4 w-4" />
                     <span>Ustawienia AI</span>
-                </button>
+                </Link>
             </div>
         </div>
     )
