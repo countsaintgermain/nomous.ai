@@ -27,10 +27,9 @@ class SavedJudgmentOut(SavedJudgmentBase):
     class Config:
         from_attributes = True
 
-class SaosSearchParams(BaseModel):
-    keywords: Optional[str] = None
-    court_type: Optional[str] = None
-    judgment_date_from: Optional[str] = None
-    judgment_date_to: Optional[str] = None
-    page_number: int = 0
-    page_size: int = 20
+class DetailsBySignaturesRequest(BaseModel):
+    signatures: List[str]
+
+class ExtractQuotesRequest(BaseModel):
+    query: str
+    text: str

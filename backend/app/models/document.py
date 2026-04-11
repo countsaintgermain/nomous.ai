@@ -41,10 +41,10 @@ class Document(Base):
     summary = Column(Text, nullable=True)
     entities = Column(JSON, nullable=True)
     suggested_facts = Column(JSON, nullable=True)
+    embedding = Column(Vector(768), nullable=True)
 
     case_id = Column(Integer, ForeignKey("cases.id"), nullable=False)
     case = relationship("Case", back_populates="documents")
-    chunks = relationship("DocumentChunk", back_populates="document", cascade="all, delete-orphan")
 
     created_date = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -56,14 +56,3 @@ class Document(Base):
     @property
     def has_source(self) -> bool:
         return self.s3_key_source is not None and os.path.exists(self.s3_key_source)
-
-
-class DocumentChunk(Base):
-    __tablename__ = "document_chunks"
-
-    id = Column(Integer, primary_key=True, index=True)
-    document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
-    content = Column(Text, nullable=False)
-    embedding = Column(Vector(768), nullable=False) # 768 dimensions for text-embedding-3-small
-    
-    document = relationship("Document", back_populates="chunks")

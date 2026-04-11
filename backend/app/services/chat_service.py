@@ -19,8 +19,10 @@ from langgraph.graph.message import add_messages
 from app.core.config import settings
 from app.services.saos_tools import search_saos_judgments, get_saos_judgment_details
 from app.core.database import SessionLocal
-from app.models.document import Document, DocumentChunk
+from app.models.document import Document
+from app.models.embedding import Embedding
 from app.models.settings import AppSettings
+from app.services.saos_ai_client import saos_ai_client
 
 logger = logging.getLogger(__name__)
 
@@ -37,21 +39,20 @@ def get_session_history(session_id: str):
         table_name="chat_messages"
     )
 
-def retrieve_case_context(query: str, case_id: int) -> str:
+async def retrieve_case_context(query: str, case_id: int) -> str:
     """Wyszukuje najbardziej pasujące fragmenty dokumentów dla danej sprawy z bazy wektorowej PostgreSQL."""
     try:
-        embeddings_model = OpenAIEmbeddings(
-            model="text-embedding-3-small",
-            dimensions=768,
-            api_key=os.getenv("OPENAI_API_KEY")
-        )
-        query_vector = embeddings_model.embed_query(query)
+        # Pobieramy wektor zapytania z SAOS-AI
+        query_vector = await saos_ai_client.encode_text(query)
+        if not query_vector:
+            return ""
 
         with SessionLocal() as db:
-            chunks = db.query(DocumentChunk).join(Document).filter(
-                Document.case_id == case_id
+            # Szukamy we wszystkich embeddingach powiązanych z tą sprawą
+            chunks = db.query(Embedding).filter(
+                Embedding.case_id == case_id
             ).order_by(
-                DocumentChunk.embedding.cosine_distance(query_vector)
+                Embedding.embedding.cosine_distance(query_vector)
             ).limit(10).all()
             
             if not chunks:
@@ -91,7 +92,7 @@ def get_rag_chain_for_case(case_id: int):
         context = state.get("context", "")
         
         if isinstance(last_message, HumanMessage):
-            context = await asyncio.to_thread(retrieve_case_context, last_message.content, state["case_id"])
+            context = await retrieve_case_context(last_message.content, state["case_id"])
 
         # Prompt systemowy
         prompt = ChatPromptTemplate.from_messages([
@@ -142,8 +143,6 @@ def get_rag_chain_for_case(case_id: int):
     graph = workflow.compile(checkpointer=checkpointer)
 
     # Wrapper zwracający asynchroniczny generator (Stream)
-    # Usuwamy 'async' przed def, ponieważ funkcja z 'yield' sama w sobie 
-    # zwraca generator, a 'async for' wewnątrz sprawia, że jest to AsyncGenerator.
     def langgraph_stream_wrapper(input_data: Dict[str, Any], config: Dict[str, Any]) -> AsyncGenerator[str, None]:
         session_id = config.get("configurable", {}).get("session_id", "default")
         thread_id = config.get("configurable", {}).get("thread_id", session_id)

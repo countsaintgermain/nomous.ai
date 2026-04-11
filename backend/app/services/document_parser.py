@@ -4,7 +4,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from app.core.config import settings
 from sqlalchemy.orm import Session
-from app.models.document import Document, DocumentChunk
+from app.models.document import Document
+from app.models.embedding import Embedding
 
 def parse_and_vectorize(db: Session, doc_id: int):
     doc = db.query(Document).filter(Document.id == doc_id).first()
@@ -38,16 +39,18 @@ def parse_and_vectorize(db: Session, doc_id: int):
         texts = [chunk.page_content for chunk in chunks]
         embeddings = embeddings_model.embed_documents(texts)
 
-        # 5. Zapis do PostgreSQL (tabela document_chunks)
-        db_chunks = []
+        # 5. Zapis do PostgreSQL (tabela embeddings)
+        db_embeddings = []
         for text, embedding in zip(texts, embeddings):
-            db_chunks.append(DocumentChunk(
-                document_id=doc.id,
+            db_embeddings.append(Embedding(
+                case_id=doc.case_id,
+                entity_type='document',
+                entity_id=doc.id,
                 content=text,
                 embedding=embedding
             ))
         
-        db.add_all(db_chunks)
+        db.add_all(db_embeddings)
         doc.status = "indexed"
         db.commit()
 

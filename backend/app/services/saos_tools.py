@@ -1,12 +1,11 @@
 import logging
 from langchain_core.tools import tool
-from app.services.saos_service import SaosService
+from app.services.saos_ai_client import saos_ai_client
 from app.core.database import SessionLocal
 from app.models.saos import SavedJudgment, JudgmentSource
 from typing import Optional
 
 logger = logging.getLogger(__name__)
-saos_service = SaosService()
 
 @tool
 async def search_saos_judgments(
@@ -26,12 +25,12 @@ async def search_saos_judgments(
         judgment_date_to: Data orzeczenia do (format YYYY-MM-DD).
     """
     try:
-        results = await saos_service.search_judgments(
-            keywords=keywords,
-            court_type=court_type,
-            judgment_date_from=judgment_date_from,
-            judgment_date_to=judgment_date_to,
-            page_size=5
+        # Używamy wyszukiwania semantycznego bez feedbacku (puste listy wektorów)
+        results = await saos_ai_client.search_with_rocchio(
+            query=keywords or "",
+            positive_vectors=[],
+            negative_vectors=[],
+            limit=5
         )
         return results
     except Exception as e:
@@ -50,7 +49,12 @@ async def get_saos_judgment_details(judgment_id: int, case_id: int):
         case_id: Identyfikator bieżącej sprawy w systemie Nomous.
     """
     try:
-        details = await saos_service.get_judgment_details(judgment_id)
+        # SaosAiClient.get_judgments_batch zwraca listę, bierzemy pierwszy element
+        batch = await saos_ai_client.get_judgments_batch([judgment_id])
+        if not batch:
+            return "Nie znaleziono orzeczenia o podanym ID."
+        
+        data = batch[0]
         
         # Automatyczny zapis do bazy danych
         db = SessionLocal()
@@ -62,18 +66,16 @@ async def get_saos_judgment_details(judgment_id: int, case_id: int):
             ).first()
             
             if not existing:
-                # Wyciągamy dane z odpowiedzi SAOS
-                data = details.get("data", {})
                 db_judgment = SavedJudgment(
                     saos_id=judgment_id,
                     case_id=case_id,
-                    signature=data.get("courtCases", [{}])[0].get("caseNumber") if data.get("courtCases") else None,
-                    judgment_date=data.get("judgmentDate"),
-                    court_name=data.get("division", {}).get("court", {}).get("name") if data.get("division") else data.get("courtType"),
-                    court_type=data.get("courtType"),
-                    division_name=data.get("division", {}).get("name") if data.get("division") else None,
+                    signature=data.get("signatures", [None])[0],
+                    judgment_date=data.get("judgment_date"),
+                    court_name=data.get("court_name") or data.get("court_type"),
+                    court_type=data.get("court_type"),
+                    division_name=data.get("division_name"),
                     judges=data.get("judges"),
-                    content=data.get("textContent"),
+                    content=data.get("text_content") or data.get("content"),
                     summary=data.get("summary"),
                     source=JudgmentSource.AI
                 )
@@ -86,7 +88,7 @@ async def get_saos_judgment_details(judgment_id: int, case_id: int):
         finally:
             db.close()
             
-        return details
+        return data
     except Exception as e:
         logger.error(f"Error in get_saos_judgment_details tool: {str(e)}")
         return f"Błąd podczas pobierania szczegółów orzeczenia SAOS: {str(e)}"

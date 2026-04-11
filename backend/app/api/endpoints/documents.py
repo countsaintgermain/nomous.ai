@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.models.document import Document
+from app.models.embedding import Embedding
 from app.models.case import Case
 
 router = APIRouter()
@@ -182,9 +183,15 @@ def delete_document(case_id: int, doc_id: int, db: Session = Depends(get_db)):
             try: os.remove(p)
             except: pass
 
+    # Usuń powiązane wektory (embeddings) - kaskada manualna dla polimorfizmu
+    db.query(Embedding).filter(
+        Embedding.entity_type == 'document',
+        Embedding.entity_id == doc_id
+    ).delete()
+
     db.delete(doc)
     db.commit()
-    return {"status": "ok", "message": "Document removed."}
+    return {"status": "ok", "message": "Document and its embeddings removed."}
 
 @router.post("/{case_id}/documents/{doc_id}/analyze")
 async def analyze_document(case_id: int, doc_id: int, db: Session = Depends(get_db)):

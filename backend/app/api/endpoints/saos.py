@@ -1,38 +1,77 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List, Any
+from typing import List, Any, Dict
 import logging
+import os
+import json
+from google import genai
+from google.genai import types
 
 from app.core.database import get_db
-from app.services.saos_service import SaosService
-from app.schemas.saos import SaosSearchParams, SavedJudgmentCreate, SavedJudgmentOut
+from app.services.saos_ai_client import saos_ai_client
+from app.models.settings import AppSettings
+from app.schemas.saos import (
+    SavedJudgmentCreate, 
+    SavedJudgmentOut,
+    DetailsBySignaturesRequest,
+    ExtractQuotesRequest
+)
 from app.models.saos import SavedJudgment, JudgmentSource
 from app.models.case import Case
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-saos_service = SaosService()
 
-@router.get("/search")
-async def search_saos(params: SaosSearchParams = Depends()):
+@router.post("/detailsBySignatures")
+async def get_details_by_signatures(req: DetailsBySignaturesRequest):
     try:
-        return await saos_service.search_judgments(
-            keywords=params.keywords,
-            court_type=params.court_type,
-            judgment_date_from=params.judgment_date_from,
-            judgment_date_to=params.judgment_date_to,
-            page_number=params.page_number,
-            page_size=params.page_size
+        return await saos_ai_client.get_details_by_signatures(req.signatures)
+    except Exception as e:
+        logger.error(f"Error fetching details: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/extract_quotes")
+async def extract_quotes(req: ExtractQuotesRequest, db: Session = Depends(get_db)):
+    try:
+        app_settings = db.query(AppSettings).first()
+        analytical_model = app_settings.analytical_model if app_settings else "gemini-3.1-flash-lite-preview"
+        api_key = app_settings.api_key if app_settings and app_settings.api_key else os.getenv("GOOGLE_API_KEY")
+        use_vertex = app_settings.use_vertex if app_settings else True
+
+        client = genai.Client(api_key=api_key, vertexai=use_vertex)
+        
+        prompt = f"""Masz za zadanie wyekstrahować z podanego tekstu orzeczenia najistotniejsze cytaty (fragmenty), które najlepiej odpowiadają na zadane pytanie użytkownika.
+Zwróć 2-4 najbardziej relewantne cytaty, w oryginalnym brzmieniu (dokładnie jak w tekście, aby można je było podświetlić). Nie skracaj ani nie zmieniaj słów.
+
+Pytanie: "{req.query}"
+
+Zwróć odpowiedź w czystym formacie JSON:
+{{
+    "quotes": [
+        "dokładny fragment tekstu nr 1",
+        "dokładny fragment tekstu nr 2"
+    ]
+}}
+"""
+        response = client.models.generate_content(
+            model=analytical_model,
+            contents=[prompt, f"Tekst orzeczenia:\n{req.text[:25000]}"],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.0
+            )
         )
+        
+        clean_res = response.text.replace("```json", "").replace("```", "").strip()
+        try:
+            data = json.loads(clean_res)
+            return {"quotes": data.get("quotes", [])}
+        except:
+            return {"quotes": []}
+            
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/judgment/{judgment_id}")
-async def get_saos_judgment(judgment_id: int):
-    try:
-        return await saos_service.get_judgment_details(judgment_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Gemini quote extraction error: {e}")
+        return {"quotes": []}
 
 @router.post("/save", response_model=SavedJudgmentOut)
 def save_judgment(judgment_in: SavedJudgmentCreate, db: Session = Depends(get_db)):

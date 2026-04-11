@@ -1,20 +1,98 @@
 import os
-from google import genai
-from google.genai import types
-from app.core.worker import broker
-from app.core.database import SessionLocal
-from app.models.document import Document, DocumentChunk
-from app.models.settings import AppSettings
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings
 import json
 from datetime import datetime
 from dotenv import load_dotenv
+from google import genai
+from google.genai import types
+
+from app.core.worker import broker
+from app.core.database import SessionLocal
+from app.models.document import Document
+from app.models.embedding import Embedding
+from app.models.settings import AppSettings
+from app.models.saos import SavedJudgment
+from app.services.saos_ai_client import saos_ai_client
 
 load_dotenv()
 
 @broker.task
-def process_document_ocr_task(doc_id: int):
+async def process_document_embedding_task(doc_id: int):
+    print(f"Nomous.ia: EMBEDDING TASK DLA DOC_ID: {doc_id}")
+    db = SessionLocal()
+    try:
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        if not doc or not doc.content_extracted: return
+
+        # Czyścimy stare chunki
+        db.query(Embedding).filter(
+            Embedding.entity_type == 'document',
+            Embedding.entity_id == doc_id
+        ).delete()
+
+        response_data = await saos_ai_client.encode_document_full(doc.content_extracted)
+        if response_data:
+            if "document_vector" in response_data:
+                doc.embedding = response_data["document_vector"]
+            
+            chunks_data = response_data.get("chunks", [])
+            for chunk in chunks_data:
+                db.add(Embedding(
+                    case_id=doc.case_id,
+                    entity_type='document',
+                    entity_id=doc.id,
+                    content=chunk.get("text", ""),
+                    embedding=chunk.get("vector")
+                ))
+        
+        db.commit()
+    except Exception as e:
+        print(f"Nomous.ia Embedding task error: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+@broker.task
+async def process_judgment_embedding_task(saos_id: int, case_id: int):
+    print(f"Nomous.ia: EMBEDDING TASK DLA SAOS_ID: {saos_id}")
+    db = SessionLocal()
+    try:
+        judgment = db.query(SavedJudgment).filter(
+            SavedJudgment.saos_id == saos_id,
+            SavedJudgment.case_id == case_id
+        ).first()
+
+        content = ""
+        if judgment and judgment.content:
+            content = judgment.content
+        else:
+            # Pobieramy z batcha
+            batch = await saos_ai_client.get_judgments_batch([saos_id])
+            if batch:
+                data = batch[0]
+                content = data.get("text_content") or data.get("content") or ""
+        
+        if content:
+            vector = await saos_ai_client.encode_text(content)
+            if vector:
+                if not judgment:
+                    judgment = SavedJudgment(
+                        saos_id=saos_id,
+                        case_id=case_id,
+                        content=content,
+                        embedding=vector
+                    )
+                    db.add(judgment)
+                else:
+                    judgment.embedding = vector
+                db.commit()
+    except Exception as e:
+        print(f"Nomous.ia Judgment embedding error: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+@broker.task
+async def process_document_ocr_task(doc_id: int):
     print(f"Nomous.ia: ZADANIE PODJĘTE DLA ID: {doc_id}")
     db = SessionLocal()
     try:
@@ -28,7 +106,6 @@ def process_document_ocr_task(doc_id: int):
         doc.status = "processing"
         db.commit()
 
-        # Pobranie modelu z ustawień
         app_settings = db.query(AppSettings).first()
         analytical_model = app_settings.analytical_model if app_settings else "gemini-3.1-flash-lite-preview"
         api_key = app_settings.api_key if app_settings and app_settings.api_key else os.getenv("GOOGLE_API_KEY")
@@ -62,7 +139,6 @@ ZWRÓĆ WYŁĄCZNIE CZYSTY JSON:
     "document_date": "YYYY-MM-DD"
 }"""
 
-        # Przesyłanie pliku jako inline data (bez zapisywania w chmurze Gemini przez File API)
         try:
             with open(analysis_path, "rb") as f:
                 doc_bytes = f.read()
@@ -92,7 +168,7 @@ ZWRÓĆ WYŁĄCZNIE CZYSTY JSON:
             analysis_data = json.loads(clean_res)
             
             extracted_text = analysis_data.get("extracted_text", "")
-            doc.content_extracted = extracted_text[:20000] if extracted_text else ""
+            doc.content_extracted = extracted_text if extracted_text else ""
             doc.summary = analysis_data.get("summary", "")
             doc.entities = analysis_data.get("entities", {})
             doc.suggested_facts = analysis_data.get("suggested_facts", [])
@@ -110,31 +186,23 @@ ZWRÓĆ WYŁĄCZNIE CZYSTY JSON:
             db.commit()
             return
 
-        if not extracted_text.strip():
-            print("Nomous.ia: Brak odczytanego tekstu z Gemini (może pusty dokument?)")
-
-        # 2. Wektoryzacja (pgvector)
+        # 2. Wektoryzacja (pgvector) przez saos-ai
         if extracted_text.strip():
             try:
-                embeddings_model = OpenAIEmbeddings(
-                    model="text-embedding-3-small",
-                    dimensions=768,
-                    api_key=os.getenv("OPENAI_API_KEY")
-                )
-                
-                text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-                chunks_text = text_splitter.split_text(extracted_text)
-                
-                if chunks_text:
-                    embeddings = embeddings_model.embed_documents(chunks_text)
-                    db_chunks = []
-                    for text, embedding in zip(chunks_text, embeddings):
-                        db_chunks.append(DocumentChunk(
-                            document_id=doc.id,
-                            content=text,
-                            embedding=embedding
+                response_data = await saos_ai_client.encode_document_full(extracted_text)
+                if response_data:
+                    if "document_vector" in response_data:
+                        doc.embedding = response_data["document_vector"]
+                    
+                    chunks_data = response_data.get("chunks", [])
+                    for chunk in chunks_data:
+                        db.add(Embedding(
+                            case_id=doc.case_id,
+                            entity_type='document',
+                            entity_id=doc.id,
+                            content=chunk.get("text", ""),
+                            embedding=chunk.get("vector")
                         ))
-                    db.add_all(db_chunks)
 
                 doc.status = "ready"
             except Exception as e:

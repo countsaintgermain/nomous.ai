@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     # PISP credentials from env
     PISP_USERNAME: str = os.getenv("PISP_USERNAME", "")
     PISP_PASSWD: str = os.getenv("PISP_PASSWD", "")
+
+    # External SAOS-AI Vector Server
+    SAOS_AI_URL: str = os.getenv("SAOS_AI_URL", "http://saos-ai:9000/v1")
+    SAOS_AI_API_KEY: str = os.getenv("SAOS_AI_API_KEY", "")
     
     class Config:
         case_sensitive = True

@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 
-from app.api.endpoints import cases, documents, chat, facts, test_stream, saos, pisp, settings
+from app.api.endpoints import cases, documents, chat, facts, test_stream, saos, pisp, settings, search
 from app.core.database import engine, Base
 
 # Create tables
@@ -33,6 +33,7 @@ app.include_router(facts.router, prefix="/api/facts", tags=["facts"])
 app.include_router(saos.router, prefix="/api/saos", tags=["saos"])
 app.include_router(pisp.router, prefix="/api/pisp", tags=["pisp"])
 app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
+app.include_router(search.router, prefix="/api/search", tags=["search"])
 app.include_router(test_stream.router, prefix="/api/test-stream", tags=["test"])
 
 # Static files for uploads

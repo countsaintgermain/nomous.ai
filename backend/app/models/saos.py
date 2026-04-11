@@ -2,6 +2,7 @@ import enum
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Enum as SQLEnum, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from pgvector.sqlalchemy import Vector
 from app.core.database import Base
 
 class JudgmentSource(str, enum.Enum):
@@ -22,6 +23,7 @@ class SavedJudgment(Base):
     content = Column(Text, nullable=True)
     summary = Column(Text, nullable=True)
     source = Column(SQLEnum(JudgmentSource), default=JudgmentSource.MANUAL)
+    embedding = Column(Vector(768), nullable=True)
     
     case_id = Column(Integer, ForeignKey("cases.id"), nullable=False)
     case = relationship("Case", back_populates="saved_judgments")
