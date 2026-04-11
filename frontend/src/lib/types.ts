@@ -48,9 +48,11 @@ export interface SaosJudgment {
     href: string;
     courtType: string;
     courtCases: { caseNumber: string }[];
+    signatures?: string[]; // Added for v5.0 API
     judgmentType?: string;
     judges?: { name: string; specialRoles: string[] }[];
     textContent?: string;
+    chunk_text?: string; // Added for hybrid highlighting
     keywords?: string[];
     division?: {
         name: string;
@@ -123,4 +125,12 @@ export interface Document {
     suggested_facts?: string[];
     has_source: boolean;
     has_pdf: boolean;
+}
+
+export interface RelevanceFeedback {
+    id: number;
+    case_id: number;
+    document_id?: number;
+    saos_id?: number;
+    is_positive: boolean;
 }

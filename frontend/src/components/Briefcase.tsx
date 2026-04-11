@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { FileText, Plus, Link as LinkIcon, Trash2, Loader2, CheckCircle2, AlertCircle, Download, ExternalLink, Briefcase as BriefcaseIcon, RefreshCw } from 'lucide-react'
+import { FileText, Plus, Link as LinkIcon, Trash2, Loader2, CheckCircle2, AlertCircle, Download, ExternalLink, Briefcase as BriefcaseIcon, RefreshCw, ThumbsUp, ThumbsDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -49,13 +49,55 @@ export function Briefcase({
     const [tag, setTag] = useState('Dokument')
     const [file, setFile] = useState<File | null>(null)
     const [docToDelete, setDocToDelete] = useState<number | null>(null)
+    const [feedback, setFeedback] = useState<Record<string, 'up' | 'down' | 'none'>>({});
     const router = useRouter()
 
     useEffect(() => {
         fetchDocuments()
+        loadFeedback()
         const interval = setInterval(fetchDocuments, 5000)
         return () => clearInterval(interval)
     }, [caseId])
+
+    const loadFeedback = async () => {
+        try {
+            const res = await fetch(`/api/search/feedback/${caseId}`);
+            if (res.ok) {
+                const data = await res.json();
+                const fbMap: Record<string, 'up' | 'down' | 'none'> = {};
+                data.forEach((fb: any) => {
+                    const key = fb.saos_id ? `saos_${fb.saos_id}` : `doc_${fb.document_id}`;
+                    fbMap[key] = fb.is_positive ? 'up' : 'down';
+                });
+                setFeedback(fbMap);
+            }
+        } catch (e) {}
+    };
+
+    const handleFeedback = async (e: React.MouseEvent, saosId: number | null, docId: number | null, vote: 'up' | 'down') => {
+        e.stopPropagation();
+        const key = saosId ? `saos_${saosId}` : `doc_${docId}`;
+        const currentVote = feedback[key];
+        const newVote = currentVote === vote ? 'none' : vote;
+
+        try {
+            const res = await fetch('/api/search/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    case_id: caseId,
+                    saos_id: saosId,
+                    document_id: docId,
+                    vote: newVote
+                })
+            });
+            if (res.ok) {
+                setFeedback(prev => ({ ...prev, [key]: newVote }));
+            }
+        } catch (error) {
+            console.error("Error saving feedback:", error);
+        }
+    };
 
     const fetchDocuments = async () => {
         try {
@@ -297,6 +339,26 @@ export function Briefcase({
                                             <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-indigo-500/5 text-indigo-600 dark:text-indigo-400 border-indigo-500/20 font-medium">
                                                 {new Date(doc.document_date).toLocaleDateString(getAppLocale())}
                                             </Badge>
+                                            
+                                            <div className="flex bg-muted/50 rounded-lg p-0.5 border border-border/50 ml-1">
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    className={`h-6 w-6 p-0 hover:bg-green-500/10 ${feedback[`doc_${doc.id}`] === 'up' ? 'text-green-500 bg-green-500/10' : 'text-muted-foreground'}`}
+                                                    onClick={(e) => handleFeedback(e, null, doc.id, 'up')}
+                                                >
+                                                    <ThumbsUp className="h-3 w-3" />
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    className={`h-6 w-6 p-0 hover:bg-red-500/10 ${feedback[`doc_${doc.id}`] === 'down' ? 'text-red-500 bg-red-500/10' : 'text-muted-foreground'}`}
+                                                    onClick={(e) => handleFeedback(e, null, doc.id, 'down')}
+                                                >
+                                                    <ThumbsDown className="h-3 w-3" />
+                                                </Button>
+                                            </div>
+
                                             <StatusBadge status={doc.status} />
 
                                             {(doc.status === 'uploaded' || doc.status === 'error') && (
