@@ -5,6 +5,7 @@ import { useChat } from "ai/react"
 import { Send, UploadCloud, FileText, Bot, User, ChevronRight, MessageSquareText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { toast } from 'sonner'
 
 import Markdown from "markdown-to-jsx"
 
@@ -67,10 +68,11 @@ export function ChatArea({
                 method: "POST",
                 body: formData,
             })
-            if (res.ok) alert("Plik wgrany i przetwarzany w tle!")
-            else alert("Błąd przetwarzania.")
+            if (res.ok) toast.success("Plik wgrany i przetwarzany w tle!")
+            else toast.error("Błąd przetwarzania.")
         } catch (err) {
             console.error("Upload error", err)
+            toast.error("Wystąpił nieoczekiwany błąd podczas przesyłania pliku.")
         }
     }
 

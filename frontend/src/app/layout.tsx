@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google'
 import './globals.css'
 import { cn } from '@/lib/utils'
 import { ThemeProvider } from '@/components/ThemeProvider'
+import { Toaster } from 'sonner'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -28,6 +29,7 @@ export default function RootLayout({
                     <div className="flex-1 flex flex-col min-w-full min-h-full w-screen h-screen">
                         {children}
                     </div>
+                    <Toaster position="bottom-right" richColors closeButton />
                 </ThemeProvider>
             </body>
         </html>

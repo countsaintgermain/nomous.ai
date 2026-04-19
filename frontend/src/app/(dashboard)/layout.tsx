@@ -8,6 +8,7 @@ import { useCaseContext } from '@/contexts/CaseContext'
 import { usePathname } from 'next/navigation'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useState, useEffect } from 'react'
+import { Loader2 } from 'lucide-react'
 
 function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     const [mounted, setMounted] = useState(false)
@@ -67,6 +68,18 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                     {!shouldHideChat && <ChatArea key={activeCase?.id || 'none'} caseId={activeCase?.id || null} />}
                 </div>
             </main>
+
+            {isSyncing && (
+                <div className="fixed bottom-6 right-6 z-[100] bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-500 border border-white/20 backdrop-blur-sm">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm font-semibold tracking-wide">Pobieranie danych z PISP...</span>
+                    <div className="flex gap-1">
+                        <span className="w-1 h-1 bg-white/40 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                        <span className="w-1 h-1 bg-white/40 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                        <span className="w-1 h-1 bg-white/40 rounded-full animate-bounce"></span>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

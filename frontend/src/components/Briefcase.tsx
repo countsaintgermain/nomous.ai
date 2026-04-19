@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { FileText, Plus, Link as LinkIcon, Trash2, Loader2, CheckCircle2, AlertCircle, Download, ExternalLink, Briefcase as BriefcaseIcon, RefreshCw, ThumbsUp, ThumbsDown } from 'lucide-react'
+import { FileText, Plus, Link as LinkIcon, Trash2, Loader2, CheckCircle2, AlertCircle, Download, ExternalLink, Briefcase as BriefcaseIcon, RefreshCw, ThumbsUp, ThumbsDown, Clock } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -26,7 +27,7 @@ interface Document {
     document_name?: string
     file_type: string
     tag: string
-    status: 'uploaded' | 'processing' | 'ready' | 'error' | 'pisp_remote'
+    status: 'uploaded' | 'processing' | 'ready' | 'error' | 'pisp_remote' | 'retrying'
     created_date: string
     document_date: string
 }
@@ -104,6 +105,17 @@ export function Briefcase({
             const res = await fetch(`/api/documents/${caseId}/documents`)
             if (!res.ok) throw new Error('Fetch failed')
             const data = await res.json()
+            
+            // Show toast for new 'retrying' status
+            data.forEach((doc: Document) => {
+                const prev = documents.find(d => d.id === doc.id);
+                if (doc.status === 'retrying' && prev?.status !== 'retrying') {
+                    toast.warning(`Google AI przeciążone. Ponawiam próbę dla "${doc.document_name || doc.filename}"...`, {
+                        position: 'bottom-right'
+                    });
+                }
+            });
+
             setDocuments(data)
         } catch (err) {
             console.error('Error fetching documents:', err)
@@ -416,6 +428,8 @@ function StatusBadge({ status }: { status: string }) {
             return <Badge variant="outline" className="text-[10px] py-0 gap-1.5 bg-orange-500/10 text-orange-600 border-orange-500/20">Portal PISP</Badge>
         case 'processing':
             return <Badge variant="outline" className="text-[10px] py-0 gap-1.5 opacity-80 bg-accent text-accent-foreground border-border"><Loader2 className="h-2.5 w-2.5 animate-spin" /> Analiza...</Badge>
+        case 'retrying':
+            return <Badge variant="outline" className="text-[10px] py-0 gap-1.5 bg-yellow-500/10 text-yellow-600 border-yellow-500/20"><Clock className="h-2.5 w-2.5 animate-pulse" /> Ponawianie...</Badge>
         case 'ready':
             return <Badge variant="outline" className="text-[10px] py-0 gap-1.5 text-green-600 dark:text-green-400 bg-green-500/10 border-green-500/20"><CheckCircle2 className="h-2.5 w-2.5" /> Gotowe</Badge>
         case 'error':

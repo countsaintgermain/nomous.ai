@@ -33,6 +33,7 @@ export interface SavedJudgment {
     judgment_date?: string;
     court_name?: string;
     court_type?: string;
+    judgment_type?: string;
     division_name?: string;
     judges?: { name: string; specialRoles: string[] }[];
     content?: string;
@@ -121,6 +122,7 @@ export interface Document {
         daty?: string[];
         kwoty?: string[];
         kary?: string[];
+        akty_prawne?: string[];
     };
     suggested_facts?: string[];
     has_source: boolean;

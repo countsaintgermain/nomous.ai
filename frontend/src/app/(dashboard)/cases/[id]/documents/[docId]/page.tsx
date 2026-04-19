@@ -127,6 +127,24 @@ export default function DocumentDetailsPage() {
         }
     }
 
+    const formatEntityValue = (val: any) => {
+        if (typeof val === 'string') return val;
+        if (typeof val === 'object' && val !== null) {
+            // Handle common patterns from Gemini
+            const parts = [];
+            if (val.kara) parts.push(val.kara);
+            if (val.wysokosc_stawki) parts.push(`stawka: ${val.wysokosc_stawki}`);
+            if (val.kwota) parts.push(val.kwota);
+            if (val.opis) parts.push(val.opis);
+            
+            if (parts.length > 0) return parts.join(' - ');
+            
+            // Fallback for unknown object structures
+            return Object.values(val).filter(v => typeof v === 'string' || typeof v === 'number').join(' - ');
+        }
+        return String(val);
+    }
+
     if (loading && !doc) {
         return <div className="p-8"><Skeleton className="h-8 w-64 mb-4" /><Skeleton className="h-[400px] w-full" /></div>
     }
@@ -285,24 +303,42 @@ export default function DocumentDetailsPage() {
                                         <div className="space-y-2">
                                             <p className="text-xs font-bold text-muted-foreground uppercase">Osoby / Podmioty</p>
                                             <div className="flex flex-wrap gap-2">
-                                                {doc.entities.osoby?.map((o, i) => <Badge key={i} variant="outline" className="bg-indigo-500/5">{o}</Badge>) || <span className="text-xs italic text-muted-foreground">Nie wykryto</span>}
+                                                {doc.entities.osoby?.map((o: any, i: number) => (
+                                                    <Badge key={i} variant="outline" className="bg-indigo-500/5">
+                                                        {typeof o === 'string' ? o : `${o.podmiot} - ${o.rola}`}
+                                                    </Badge>
+                                                )) || <span className="text-xs italic text-muted-foreground">Nie wykryto</span>}
                                             </div>
                                         </div>
                                         <div className="space-y-2">
                                             <p className="text-xs font-bold text-muted-foreground uppercase">Kluczowe Daty</p>
                                             <div className="flex flex-wrap gap-2">
-                                                {doc.entities.daty?.map((d, i) => <Badge key={i} variant="outline" className="bg-emerald-500/5">{d}</Badge>) || <span className="text-xs italic text-muted-foreground">Nie wykryto</span>}
+                                                {doc.entities.daty?.map((d: any, i: number) => (
+                                                    <Badge key={i} variant="outline" className="bg-emerald-500/5">
+                                                        {typeof d === 'string' ? d : `${d.znaczenie} - ${d.data}`}
+                                                    </Badge>
+                                                )) || <span className="text-xs italic text-muted-foreground">Nie wykryto</span>}
                                             </div>
                                         </div>
                                         <div className="space-y-2">
                                             <p className="text-xs font-bold text-muted-foreground uppercase">Kary i Kwoty</p>
                                             <div className="flex flex-wrap gap-2">
-                                                {[...(doc.entities.kary || []), ...(doc.entities.kwoty || [])].map((k, i) => (
+                                                {[...(doc.entities.kary || []), ...(doc.entities.kwoty || [])].map((k: any, i: number) => (
                                                     <Badge key={i} variant="outline" className="bg-orange-500/5 border-orange-500/20 text-orange-600 dark:text-orange-400">
-                                                        {k}
+                                                        {formatEntityValue(k)}
                                                     </Badge>
                                                 ))}
                                                 {(!doc.entities.kary?.length && !doc.entities.kwoty?.length) && <span className="text-xs italic text-muted-foreground">Nie wykryto</span>}
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <p className="text-xs font-bold text-muted-foreground uppercase">Akty Prawne i Orzecznictwo</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {doc.entities.akty_prawne?.map((a: string, i: number) => (
+                                                    <Badge key={i} variant="outline" className="bg-blue-500/5 border-blue-500/20 text-blue-600 dark:text-blue-400">
+                                                        {a}
+                                                    </Badge>
+                                                )) || <span className="text-xs italic text-muted-foreground">Nie wykryto</span>}
                                             </div>
                                         </div>
                                     </>

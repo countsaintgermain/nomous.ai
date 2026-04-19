@@ -94,19 +94,34 @@ export function SettingsView() {
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-6">
-                            <div className="flex items-center justify-between p-3 bg-muted/20 rounded-lg border border-border/50">
-                                <div className="space-y-0.5">
-                                    <Label className="text-sm font-semibold text-foreground">Tryb Vertex AI</Label>
-                                    <p className="text-[11px] text-muted-foreground italic">Włącz, jeśli używasz klucza i modeli z Google Cloud Vertex AI.</p>
+                            <div className="space-y-3">
+                                <Label className="text-sm font-semibold text-foreground">Dostawca API (Google)</Label>
+                                <div className="grid grid-cols-2 gap-2 p-1 bg-muted/30 rounded-lg border border-border/50">
+                                    <button
+                                        type="button"
+                                        onClick={() => setSettings({ ...settings, use_vertex: false })}
+                                        className={`flex flex-col items-center justify-center p-3 rounded-md transition-all ${
+                                            !settings.use_vertex 
+                                            ? "bg-background text-indigo-500 shadow-sm border border-border" 
+                                            : "text-muted-foreground hover:bg-muted/50 border border-transparent"
+                                        }`}
+                                    >
+                                        <span className="text-sm font-bold">Google AI Studio</span>
+                                        <span className="text-[10px] opacity-70 italic">Klucze AIza... (darmowe)</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSettings({ ...settings, use_vertex: true })}
+                                        className={`flex flex-col items-center justify-center p-3 rounded-md transition-all ${
+                                            settings.use_vertex 
+                                            ? "bg-background text-indigo-500 shadow-sm border border-border" 
+                                            : "text-muted-foreground hover:bg-muted/50 border border-transparent"
+                                        }`}
+                                    >
+                                        <span className="text-sm font-bold">Vertex AI</span>
+                                        <span className="text-[10px] opacity-70 italic">Google Cloud Platform</span>
+                                    </button>
                                 </div>
-                                <Button
-                                    size="sm"
-                                    variant={settings.use_vertex ? "default" : "outline"}
-                                    onClick={() => setSettings({ ...settings, use_vertex: !settings.use_vertex })}
-                                    className={settings.use_vertex ? "bg-indigo-600 hover:bg-indigo-700 text-white" : "border-border"}
-                                >
-                                    {settings.use_vertex ? "Aktywny" : "Wyłączony"}
-                                </Button>
                             </div>
 
                             <div className="space-y-2">
