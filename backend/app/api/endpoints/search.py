@@ -1,7 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import logging
+import json
+import os
+import asyncio
+from app.core.llm import get_llm
 
 from app.core.database import get_db
 from app.models.feedback import RelevanceFeedback
@@ -11,6 +15,7 @@ from app.services.saos_ai_client import saos_ai_client
 from app.models.document import Document
 from app.models.embedding import Embedding
 from app.models.saos import SavedJudgment
+from app.models.settings import AppSettings
 from app.core.worker import broker
 
 router = APIRouter()
@@ -75,44 +80,225 @@ async def give_feedback(feedback_in: RelevanceFeedbackCreate, db: Session = Depe
     return new_feedback
 
 @router.post("/semantic")
-async def semantic_search(case_id: int, query: str, top_k: int = 10, include_context: bool = True, db: Session = Depends(get_db)):
-    # 1. Pobierz feedback (łapki) dla tej sprawy
-    feedback_items = db.query(RelevanceFeedback).filter(RelevanceFeedback.case_id == case_id).all()
+async def semantic_search(
+    case_id: int, 
+    query: str, 
+    top_k: int = 20, 
+    use_rocchio: bool = True, 
+    use_summaries: bool = True, 
+    generate_queries: bool = True, 
+    use_agent: bool = False,
+    use_pro: bool = False,
+    db: Session = Depends(get_db)
+):
+    logger.info(f"Nomous.ia: START semantic_search (rocchio={use_rocchio}, agent={use_agent}, pro={use_pro}) dla query='{query}'")
+    
+    # 0. Wybór modelu (Analytical vs Pro)
+    model_type = "main" if use_pro else "analytical"
+    # 1. Pobierz sprawę i dokumenty
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    
+    # Pobieramy wszystkie dokumenty sprawy które są przetworzone
+    all_docs = db.query(Document).filter(Document.case_id == case_id, Document.status == "ready").all()
+    logger.info(f"Nomous.ia: Znaleziono {len(all_docs)} gotowych dokumentów.")
     
     positive_vectors = []
     negative_vectors = []
+    extracted_regulations = set()
+    document_contexts = []
 
+    # 2. Zbieranie kontekstu z dokumentów (Wektory + Przepisy + Podsumowania)
+    for doc in all_docs:
+        if use_rocchio and doc.embedding is not None:
+            positive_vectors.append([float(x) for x in doc.embedding])
+        
+        if use_summaries:
+            if doc.entities:
+                try:
+                    entities = doc.entities if isinstance(doc.entities, dict) else json.loads(doc.entities)
+                    for key in ['przepisy', 'legal_acts', 'articles', 'relevant_provisions']:
+                        vals = entities.get(key, [])
+                        if isinstance(vals, list):
+                            for v in vals: extracted_regulations.add(str(v))
+                        elif isinstance(vals, str):
+                            extracted_regulations.add(vals)
+                except: pass
+            
+            if doc.summary:
+                document_contexts.append(doc.summary[:500])
+
+    # 3. Dodaj manualny feedback (łapki)
+    feedback_items = db.query(RelevanceFeedback).filter(RelevanceFeedback.case_id == case_id).all()
+    logger.info(f"Nomous.ia: Pobrano {len(feedback_items)} elementów feedbacku.")
     for fb in feedback_items:
         vector = None
         if fb.document_id:
-            # Uwzględniamy wektory dokumentów tylko jeśli include_context jest włączony i łapka jest w górę
-            if not include_context or not fb.is_positive:
-                continue
-                
             doc = db.query(Document).filter(Document.id == fb.document_id).first()
-            if doc and doc.embedding:
-                vector = doc.embedding
+            if doc and doc.embedding is not None: vector = doc.embedding
         elif fb.saos_id:
-            judgment = db.query(SavedJudgment).filter(
-                SavedJudgment.saos_id == fb.saos_id,
-                SavedJudgment.case_id == case_id
-            ).first()
-            if judgment and judgment.embedding:
-                vector = judgment.embedding
+            judgment = db.query(SavedJudgment).filter(SavedJudgment.saos_id == fb.saos_id, SavedJudgment.case_id == case_id).first()
+            if judgment and judgment.embedding is not None: vector = judgment.embedding
         
         if vector:
+            v_list = [float(x) for x in vector]
             if fb.is_positive:
-                positive_vectors.append(vector)
+                positive_vectors.append(v_list)
             else:
-                negative_vectors.append(vector)
+                negative_vectors.append(v_list)
 
-    # 2. Wykonaj wyszukiwanie z Rocchio bezpośrednio na serwerze saos-ai
-    results = await saos_ai_client.search_with_rocchio(
-        query=query,
-        positive_vectors=positive_vectors,
-        negative_vectors=negative_vectors,
-        limit=top_k
-    )
+    # 4. Generowanie 5 promptów przez Gemini
+    generated_prompts = []
+    if generate_queries:
+        logger.info("Nomous.ia: Wywołuję LangChain Gemini dla wzmocnienia zapytania...")
+        max_retries = 3
+        
+        for attempt in range(max_retries):
+            try:
+                llm = get_llm(db, model_type=model_type, json_mode=True)
+                
+                prompt_instr = f"""Jesteś ekspertem prawnym. Na podstawie zapytania użytkownika oraz kontekstu sprawy, wygeneruj 5 zróżnicowanych, technicznych zapytań (promptów) do wyszukiwarki orzeczeń.
+                
+Zapytanie użytkownika: "{query}"
+Przepisy ze sprawy: {", ".join(list(extracted_regulations)[:20])}
+Kontekst dokumentów: {" | ".join(document_contexts[:3])}
 
-    # 3. Wyniki z saos-ai API v5.0 są już listą orzeczeń z saos_id i metadanymi.
-    return results
+Zwróć odpowiedź w formacie JSON jako tablicę 5 stringów. Każdy string powinien być gęstym, prawniczym opisem zagadnienia (semantic search friendly).
+"""
+                response = llm.invoke(prompt_instr)
+                content = response.content
+                
+                # Obsługa różnych formatów contentu z LangChain
+                json_str = ""
+                if isinstance(content, str):
+                    json_str = content.strip()
+                elif isinstance(content, list) and len(content) > 0:
+                    # Nowsze SDK Google czasem zwraca listę słowników
+                    item = content[0]
+                    if isinstance(item, dict) and "text" in item:
+                        json_str = item["text"].strip()
+                
+                if json_str:
+                    try:
+                        generated_prompts = json.loads(json_str)
+                        if isinstance(generated_prompts, list):
+                            logger.info(f"Nomous.ia: LangChain wygenerował {len(generated_prompts)} promptów.")
+                            break
+                    except json.JSONDecodeError:
+                        logger.error(f"Nomous.ia: Błąd parsowania JSON z LLM. Raw json_str: {json_str[:200]}")
+                
+                logger.warning(f"Nomous.ia: Gemini zwróciło nieoczekiwany format. Raw content type: {type(content)}")
+            except Exception as e:
+                logger.warning(f"Nomous.ia: Błąd LangChain (próba {attempt+1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(5)
+                else:
+                    logger.error("Nomous.ia: LangChain poddał się.")
+                    break
+
+    # 5. Budowa MEGA-ZAPYTANIA
+    mega_query_parts = [f"ZAPYTANIE BAZOWE: {query}"]
+    if extracted_regulations:
+        mega_query_parts.append(f"PRZEPISY I PODSTAWY: {', '.join(list(extracted_regulations)[:15])}")
+    if generated_prompts:
+        mega_query_parts.append(f"KONTEKST SEMANTYCZNY: {' | '.join(generated_prompts)}")
+    else:
+        logger.info("Nomous.ia: Kontynuuję wyszukiwanie bez dodatkowych promptów (Gemini unavailable).")
+    
+    mega_query = "\n\n".join(mega_query_parts)
+    logger.info(f"Nomous.ia: Mega-query zbudowane. Długość: {len(mega_query)}")
+    
+    # 6. Wykonaj wyszukiwanie z Rocchio
+    logger.info(f"Nomous.ia: Wysyłam zapytanie do SAOS-AI (Rocchio: {len(positive_vectors)} pos, {len(negative_vectors)} neg)")
+    try:
+        results = await saos_ai_client.search_with_rocchio(
+            query=mega_query,
+            positive_vectors=positive_vectors[:15],
+            negative_vectors=negative_vectors[:5],
+            limit=top_k
+        )
+        logger.info(f"Nomous.ia: Otrzymano {len(results)} wyników z SAOS-AI.")
+
+        # 7. RESEARCH AGENT (Ewaluacja + Autonomiczna Ekspansja)
+        if use_agent and results:
+            logger.info(f"Nomous.ia: Research Agent (model={model_type}) ocenia {len(results)} wyników...")
+            case_context_str = " | ".join(document_contexts[:5])
+            
+            async def evaluate_one(j, is_expansion=False):
+                try:
+                    # Używamy wybranego modelu (Pro lub Analytical)
+                    llm = get_llm(db, model_type=model_type, json_mode=True)
+                    text_to_eval = j.get("summary") or j.get("chunk_text") or ""
+                    
+                    eval_prompt = f"""Jesteś ekspertem prawnym. Oceń przydatność orzeczenia do sprawy.
+KONTEKST SPRAWY: {case_context_str[:1500]}
+ZAPYTANIE UŻYTKOWNIKA: {query}
+ORZECZENIE: {text_to_eval[:2500]}
+
+Oceń w skali 0-100. Zwróć WYŁĄCZNIE JSON: {{"score": int, "reason": "jedno zdanie"}}
+"""
+                    resp = await llm.ainvoke(eval_prompt)
+                    content = resp.content
+                    json_str = ""
+                    if isinstance(content, str): json_str = content.strip()
+                    elif isinstance(content, list) and content:
+                        item = content[0]
+                        if isinstance(item, dict): json_str = item.get("text", "").strip()
+                    
+                    eval_data = json.loads(json_str)
+                    j["ai_score"] = eval_data.get("score", 0)
+                    j["ai_reason"] = eval_data.get("reason", "")
+                    
+                    # Logika ekspansji: jeśli wyrok jest genialny, szukamy podobnych (tylko w pierwszej turze)
+                    if not is_expansion and j["ai_score"] > 85:
+                        logger.info(f"Nomous.ia: Agent znalazł kluczowy wyrok ({j.get('saos_id')}). Szukam podobnych...")
+                        # Generujemy hyper-query na podstawie tego wyroku
+                        hyper_prompt = f"Na podstawie tego wyroku wygeneruj 1 ultra-precyzyjne zapytanie semantyczne do bazy orzeczeń, aby znaleźć identyczne stany faktyczne: {j['ai_reason']}. Wyrok: {text_to_eval[:500]}"
+                        hyper_resp = await llm.ainvoke(hyper_prompt)
+                        # To zapytanie wrzucimy do dodatkowego wyszukiwania niżej
+                        return j, hyper_resp.content
+                except Exception as e:
+                    logger.warning(f"Agent evaluation error: {e}")
+                    j["ai_score"] = 0
+                return j, None
+
+            # Faza 1: Pierwsza ocena i zbieranie pomysłów na ekspansję
+            eval_results = await asyncio.gather(*[evaluate_one(j) for j in results])
+            
+            final_results = []
+            expansion_queries = []
+            for r, h_q in eval_results:
+                final_results.append(r)
+                if h_q: expansion_queries.append(h_q)
+            
+            # Faza 2: Autonomiczna Ekspansja (szukanie rodzeństwa najlepszych wyroków)
+            if expansion_queries:
+                logger.info(f"Nomous.ia: Agent wykonuje {len(expansion_queries)} dodatkowych skoków do SAOS...")
+                extra_judgments = []
+                seen_ids = {j.get("saos_id") for j in final_results}
+                
+                for eq in expansion_queries[:3]: # Limitujemy skoki do 3 najlepszych
+                    try:
+                        ex_res = await saos_ai_client.search(query=eq, limit=5)
+                        for ej in ex_res:
+                            if ej.get("saos_id") not in seen_ids:
+                                ej["ai_reason"] = "Znalezione przez Agenta jako podobne do kluczowego wyroku."
+                                extra_judgments.append(ej)
+                                seen_ids.add(ej.get("saos_id"))
+                    except: pass
+                
+                if extra_judgments:
+                    # Ewaluacja nowo znalezionych wyroków
+                    logger.info(f"Nomous.ia: Ewaluacja {len(extra_judgments)} wyroków z ekspansji...")
+                    ex_eval_results = await asyncio.gather(*[evaluate_one(ej, is_expansion=True) for ej in extra_judgments])
+                    for r, _ in ex_eval_results:
+                        final_results.append(r)
+
+            # Ostateczne sortowanie
+            results = sorted(final_results, key=lambda x: x.get("ai_score", 0), reverse=True)
+
+        return results
+    except Exception as e:
+        logger.error(f"Nomous.ia: Błąd SAOS-AI: {e}")
+        raise HTTPException(status_code=500, detail=f"Błąd silnika wyszukiwania: {str(e)}")
