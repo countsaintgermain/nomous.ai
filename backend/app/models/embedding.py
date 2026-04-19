@@ -11,7 +11,7 @@ class Embedding(Base):
     entity_type = Column(String(50), nullable=False, index=True)  # np. 'document', 'judgment'
     entity_id = Column(Integer, nullable=False, index=True)        # ID z tabeli (np. Document.id)
     content = Column(Text, nullable=True)                      # Treść chunku
-    embedding = Column(Vector(768), nullable=True)             # Nasz wektor
+    embedding = Column(Vector(1536), nullable=True)             # Nasz wektor
     metadata_json = Column(JSON, nullable=True)                # Elastyczne metadane
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())

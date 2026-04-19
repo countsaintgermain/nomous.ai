@@ -41,7 +41,7 @@ class Document(Base):
     summary = Column(Text, nullable=True)
     entities = Column(JSON, nullable=True)
     suggested_facts = Column(JSON, nullable=True)
-    embedding = Column(Vector(768), nullable=True)
+    embedding = Column(Vector(1536), nullable=True)
 
     case_id = Column(Integer, ForeignKey("cases.id"), nullable=False)
     case = relationship("Case", back_populates="documents")

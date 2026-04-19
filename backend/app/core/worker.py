@@ -12,3 +12,4 @@ broker = ListQueueBroker(
 
 # Import zadań - potrzebne dla workerów by jezarejestrować
 import app.services.tasks
+import app.core.tasks

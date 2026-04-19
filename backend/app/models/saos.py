@@ -18,6 +18,7 @@ class SavedJudgment(Base):
     judgment_date = Column(String(50), nullable=True)
     court_name = Column(Text, nullable=True)
     court_type = Column(String(50), nullable=True)
+    judgment_type = Column(String(50), nullable=True)
     division_name = Column(Text, nullable=True)
     judges = Column(JSON, nullable=True)
     content = Column(Text, nullable=True)
