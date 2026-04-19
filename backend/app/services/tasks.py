@@ -1,9 +1,10 @@
 import os
 import json
+import base64
 from datetime import datetime
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types
+from app.core.llm import get_llm
+from langchain_core.messages import HumanMessage
 
 from app.core.worker import broker
 from app.core.database import SessionLocal
@@ -118,24 +119,30 @@ async def process_document_ocr_task(doc_id: int):
             
 ZADANIA:
 1. PEŁNY TEKST (OCR/Parsowanie): Zwróć dosłownie pełny, odczytany tekst całego dokumentu od pierwszej do ostatniej strony. Nie streszczaj go w tym polu.
-2. STRESZCZENIE: Zwięzłe (2-3 zdania), konkretne fakty.
-3. OSOBY: Wszystkie imiona i nazwiska (oskarżeni, świadkowie, sędziowie).
-4. DATY: Wszystkie daty zdarzeń i terminów.
-5. KWOTY I KARY: Wyodrębnij precyzyjnie wymierzone kary, kwoty pieniężne, koszty sądowe i opłaty.
-6. FAKTY: 3-5 kluczowych twierdzeń do bazy faktów.
-7. DATA DOKUMENTU: Data wydania/sporządzenia w formacie YYYY-MM-DD.
+2. OPRACOWANIE (zwracane w polu 'summary'): Kompleksowe, profesjonalne omówienie dokumentu (1-3 akapity). Przedstaw dokładny stan faktyczny, główne roszczenia, tezy, dowody lub postanowienia. Zwróć szczególną uwagę na detale prawne istotne dla przebiegu sprawy, bez ucinania najważniejszego kontekstu.
+3. OSOBY: Wszystkie imiona i nazwiska (oskarżeni, świadkowie, sędziowie, strony itp.) wraz z ich rolą w dokumencie.
+4. DATY: Wszystkie istotne daty występujące w dokumencie (daty zdarzeń, terminy, daty rozpraw itp.) wraz z określeniem ich znaczenia.
+5. KWOTY I KARY: Wyodrębnij precyzyjnie wymierzone kary, kwoty pieniężne, koszty sądowe i opłaty. ZWRÓĆ WYŁĄCZNIE jako płaską listę stringów.
+6. AKTY PRAWNE: Wszystkie przywołane w tekście artykuły, ustawy, kodeksy oraz sygnatury innych orzeczeń sądowych.
+7. FAKTY: 3-5 kluczowych twierdzeń do bazy faktów.
+8. DATA DOKUMENTU: Data wydania/sporządzenia w formacie YYYY-MM-DD.
 
-ZWRÓĆ WYŁĄCZNIE CZYSTY JSON:
+ZWRÓĆ WYŁĄCZNIE CZYSTY JSON ZGODNY Z PONIŻSZYM SCHEMATEM:
 { 
-    "extracted_text": "...",
-    "summary": "...", 
+    "extracted_text": "pełny tekst dokumentu...",
+    "summary": "opracowanie...", 
     "entities": { 
-        "osoby": [], 
-        "daty": [], 
-        "kwoty": [],
-        "kary": []
+        "osoby": [
+            { "podmiot": "Imię Nazwisko", "rola": "rola" }
+        ], 
+        "daty": [
+            { "data": "YYYY-MM-DD", "znaczenie": "opis" }
+        ], 
+        "kwoty": ["string 1", "string 2"],
+        "kary": ["string 1", "string 2"],
+        "akty_prawne": ["Art. ...", "Sygn. ..."]
     },
-    "suggested_facts": [],
+    "suggested_facts": ["fakt 1", "fakt 2"],
     "document_date": "YYYY-MM-DD"
 }"""
 
@@ -150,23 +157,52 @@ ZWRÓĆ WYŁĄCZNIE CZYSTY JSON:
             elif ext == 'png':
                 mime_type = "image/png"
             
-            document_part = types.Part.from_bytes(data=doc_bytes, mime_type=mime_type)
+            b64_data = base64.b64encode(doc_bytes).decode("utf-8")
             
-            print(f"Nomous.ia: WYWOŁANIE MODELU: {analytical_model} dla dokumentu {analysis_path}...")
-            
-            response = client.models.generate_content(
-                model=analytical_model,
-                contents=[prompt, document_part],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.0
-                )
+            # Przygotowanie wiadomości LangChain
+            message = HumanMessage(
+                content=[
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url", # Używamy image_url dla obrazów i PDF w Gemini LangChain
+                        "image_url": f"data:{mime_type};base64,{b64_data}"
+                    }
+                ]
             )
-            print(f"Nomous.ia: ODPOWIEDŹ OTRZYMANA z modelu {analytical_model}")
+
+            max_retries = 3
+            analysis_data = {}
             
-            clean_res = response.text.replace("```json", "").replace("```", "").strip()
-            analysis_data = json.loads(clean_res)
-            
+            for attempt in range(max_retries):
+                try:
+                    llm = get_llm(db, model_type="analytical", json_mode=True)
+                    print(f"Nomous.ia: WYWOŁANIE LANGCHAIN: dla dokumentu {analysis_path}...")
+                    
+                    response = llm.invoke([message])
+                    content = response.content
+                    
+                    json_str = ""
+                    if isinstance(content, str):
+                        json_str = content.strip()
+                    elif isinstance(content, list) and len(content) > 0:
+                        item = content[0]
+                        if isinstance(item, dict) and "text" in item:
+                            json_str = item["text"].strip()
+
+                    if json_str:
+                        analysis_data = json.loads(json_str)
+                        print(f"Nomous.ia: Pomyślnie otrzymano i sparsowano analizę LangChain")
+                        break
+                except Exception as e:
+                    if "503" in str(e) and attempt < max_retries - 1:
+                        print(f"Nomous.ia: Gemini 503 (próba {attempt+1}). Ponowienie...")
+                        import asyncio
+                        await asyncio.sleep(10)
+                        continue
+                    else:
+                        print(f"Nomous.ia: Błąd LangChain OCR: {e}")
+                        raise e
+
             extracted_text = analysis_data.get("extracted_text", "")
             doc.content_extracted = extracted_text if extracted_text else ""
             doc.summary = analysis_data.get("summary", "")

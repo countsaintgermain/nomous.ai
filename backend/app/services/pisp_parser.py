@@ -1,67 +1,104 @@
 import os
 import json
-from google import genai
-from typing import List, Dict, Any
+from typing import List, Dict, Any, TypedDict, Optional
 from app.schemas.pisp import PispSyncData, PispActivity, PispHearing, PispDocument, PispEntity
 from app.core.database import SessionLocal
 from app.models.settings import AppSettings
+from app.core.llm import get_llm
+from langgraph.graph import StateGraph, END
+
+# Definicja stanu dla LangGraph
+class PispState(TypedDict):
+    raw_texts: Dict[str, str]
+    document_links: List[Dict]
+    extracted_data: Optional[Dict[str, Any]]
+    error: Optional[str]
 
 def parse_pisp_data_with_ai(raw_texts: Dict[str, str], document_links: List[Dict]) -> PispSyncData:
     """
-    Wykorzystuje najnowsze SDK google-genai do analizy danych strukturalnych.
+    Wykorzystuje LangGraph i LangChain do wieloetapowej (docelowo) analizy danych z PISP.
     """
-    # Pobranie modelu z ustawień
-    with SessionLocal() as db:
-        app_settings = db.query(AppSettings).first()
-        analytical_model = app_settings.analytical_model if app_settings else "gemini-3.1-flash-lite-preview"
-        api_key = app_settings.api_key if app_settings and app_settings.api_key else os.getenv("GOOGLE_API_KEY")
-        use_vertex = app_settings.use_vertex if app_settings else True
-
-    print(f"Nomous.ia: Inicjalizacja Gemini Client (PISP). Model: {analytical_model}, Vertex: {use_vertex}")
-    client = genai.Client(api_key=api_key, vertexai=use_vertex)
     
-    full_text = "\n\n".join([f"Sekcja {k}:\n{v}" for k, v in raw_texts.items()])
+    # 1. Definicja węzła parsującego
+    def parse_node(state: PispState):
+        full_text = "\n\n".join([f"Sekcja {k}:\n{v}" for k, v in state["raw_texts"].items()])
+        
+        prompt = f"""
+        Jesteś asystentem prawnym. Przeanalizuj poniższy tekst z Portalu Informacyjnego Sądu (PISP) i wyodrębnij dane strukturalne.
+        Zwróć WYŁĄCZNIE czysty JSON zgodny z poniższym schematem.
+
+        TEKST:
+        {full_text[:40000]}
+
+        SCHEMAT JSON:
+        {{
+            "signature": "sygnatura sprawy",
+            "court": "nazwa sądu",
+            "department": "wydział",
+            "status": "status sprawy",
+            "receiptDate": "data wpływu",
+            "conclusionDate": "data zakończenia",
+            "publicationDate": "data publikacji",
+            "caseSubject": "przedmiot sprawy",
+            "referent": "referent/sędzia",
+            "claimValue": "wartość sporu",
+            "resolution": "rozstrzygnięcie",
+            "mainEntities": "główne podmioty",
+            "entities": [{{ "role": "rola", "name": "nazwa", "status": "status" }}],
+            "activities": [{{ "date": "data", "activity": "opis", "submitted_by": "kto", "signature": "sygnatura" }}],
+            "hearings": [{{ "date": "data", "room": "sala", "judge": "sędzia", "result": "wynik" }}]
+        }}
+        """
+        
+        try:
+            with SessionLocal() as db:
+                llm = get_llm(db, model_type="analytical", json_mode=True)
+                print(f"Nomous.ia: LangGraph wywołuje LangChain (PISP)...")
+                response = llm.invoke(prompt)
+                
+                content = response.content
+                json_str = ""
+                if isinstance(content, str):
+                    json_str = content.strip()
+                elif isinstance(content, list) and len(content) > 0:
+                    item = content[0]
+                    if isinstance(item, dict) and "text" in item:
+                        json_str = item["text"].strip()
+
+                if json_str:
+                    data = json.loads(json_str)
+                    return {"extracted_data": data}
+                return {"error": "Błędny format odpowiedzi LLM"}
+        except Exception as e:
+            print(f"Nomous.ia LangGraph Node Error: {e}")
+            return {"error": str(e)}
+
+    # 2. Budowa Grafu
+    workflow = StateGraph(PispState)
+    workflow.add_node("parser", parse_node)
+    workflow.set_entry_point("parser")
+    workflow.add_edge("parser", END)
     
-    prompt = f"""
-    Jesteś asystentem prawnym. Przeanalizuj poniższy tekst z Portalu Informacyjnego Sądu (PISP) i wyodrębnij dane strukturalne.
-    Zwróć WYŁĄCZNIE czysty JSON zgodny z poniższym schematem.
+    # Kompilacja grafu
+    app = workflow.compile()
+    
+    # 3. Wykonanie grafu
+    initial_state = {
+        "raw_texts": raw_texts,
+        "document_links": document_links,
+        "extracted_data": None,
+        "error": None
+    }
+    
+    final_output = app.invoke(initial_state)
+    data = final_output.get("extracted_data")
+    
+    if not data or final_output.get("error"):
+        print(f"Nomous.ia PISP Graph failed: {final_output.get('error')}")
+        return PispSyncData(signature="Error")
 
-    TEKST:
-    {full_text[:40000]}
-
-    SCHEMAT JSON:
-    {{
-        "signature": "sygnatura sprawy",
-        "court": "nazwa sądu",
-        "department": "wydział",
-        "status": "status sprawy",
-        "receiptDate": "data wpływu",
-        "conclusionDate": "data zakończenia",
-        "publicationDate": "data publikacji",
-        "caseSubject": "przedmiot sprawy",
-        "referent": "referent/sędzia",
-        "claimValue": "wartość sporu",
-        "resolution": "rozstrzygnięcie",
-        "mainEntities": "główne podmioty",
-        "entities": [{{ "role": "rola", "name": "nazwa", "status": "status" }}],
-        "activities": [{{ "date": "data", "activity": "opis", "submitted_by": "kto", "signature": "sygnatura" }}],
-        "hearings": [{{ "date": "data", "room": "sala", "judge": "sędzia", "result": "wynik" }}]
-    }}
-    """
-
+    # 4. Mapowanie na obiekty Pydantic
     try:
-        print(f"Nomous.ia: WYWOŁANIE MODELU (PISP): {analytical_model}...")
-        response = client.models.generate_content(
-            model=analytical_model,
-            contents=prompt
-        )
-        print(f"Nomous.ia: ODPOWIEDŹ OTRZYMANA z modelu (PISP) {analytical_model}")
-        
-        # Nowy SDK zwraca tekst w response.text
-        json_str = response.text.replace('```json', '').replace('```', '').strip()
-        data = json.loads(json_str)
-        
-        # Mapowanie na obiekty Pydantic
         activities = [PispActivity(**a) for a in data.get('activities', [])]
         hearings = [PispHearing(**h) for h in data.get('hearings', [])]
         entities = [PispEntity(**e) for e in data.get('entities', [])]
@@ -86,5 +123,5 @@ def parse_pisp_data_with_ai(raw_texts: Dict[str, str], document_links: List[Dict
             documents=documents
         )
     except Exception as e:
-        print(f"Nomous.ia New SDK Parse Error: {e}")
+        print(f"Nomous.ia Mapping Error after LangGraph: {e}")
         return PispSyncData(signature="Error")
