@@ -4,6 +4,7 @@ from app.services.saos_ai_client import saos_ai_client
 from app.core.database import SessionLocal
 from app.models.saos import SavedJudgment, JudgmentSource
 from typing import Optional
+from app.services.research_service import perform_autonomous_research
 
 logger = logging.getLogger(__name__)
 
@@ -17,15 +18,8 @@ async def search_saos_judgments(
     """
     Wyszukuje orzeczenia w systemie SAOS na podstawie słów kluczowych i filtrów.
     Zwraca listę dopasowanych orzeczeń (skrócone dane).
-    
-    Args:
-        keywords: Słowa kluczowe do wyszukiwania w treści orzeczeń.
-        court_type: Typ sądu (COMMON, SUPREME, ADMINISTRATIVE, CONSTITUTIONAL_TRIBUNAL, STATE_TRIBUNAL).
-        judgment_date_from: Data orzeczenia od (format YYYY-MM-DD).
-        judgment_date_to: Data orzeczenia do (format YYYY-MM-DD).
     """
     try:
-        # Używamy wyszukiwania semantycznego bez feedbacku (puste listy wektorów)
         results = await saos_ai_client.search_with_rocchio(
             query=keywords or "",
             positive_vectors=[],
@@ -41,25 +35,16 @@ async def search_saos_judgments(
 async def get_saos_judgment_details(judgment_id: int, case_id: int):
     """
     Pobiera pełną treść orzeczenia z SAOS na podstawie jego ID. 
-    Użyj tego narzędzia, gdy chcesz przeanalizować konkretne orzeczenie znalezione wcześniej.
     Pobranie szczegółów automatycznie zapisuje orzeczenie w aktach sprawy jako 'Pobrane przez AI'.
-    
-    Args:
-        judgment_id: Identyfikator orzeczenia w systemie SAOS.
-        case_id: Identyfikator bieżącej sprawy w systemie Nomous.
     """
     try:
-        # SaosAiClient.get_judgments_batch zwraca listę, bierzemy pierwszy element
         batch = await saos_ai_client.get_judgments_batch([judgment_id])
         if not batch:
             return "Nie znaleziono orzeczenia o podanym ID."
         
         data = batch[0]
-        
-        # Automatyczny zapis do bazy danych
         db = SessionLocal()
         try:
-            # Sprawdź czy już zapisano
             existing = db.query(SavedJudgment).filter(
                 SavedJudgment.saos_id == judgment_id,
                 SavedJudgment.case_id == case_id
@@ -81,7 +66,6 @@ async def get_saos_judgment_details(judgment_id: int, case_id: int):
                 )
                 db.add(db_judgment)
                 db.commit()
-                logger.info(f"Automatically saved SAOS judgment {judgment_id} for case {case_id} (Source: AI)")
         except Exception as save_error:
             logger.error(f"Error saving judgment automatically: {str(save_error)}")
             db.rollback()
@@ -92,3 +76,20 @@ async def get_saos_judgment_details(judgment_id: int, case_id: int):
     except Exception as e:
         logger.error(f"Error in get_saos_judgment_details tool: {str(e)}")
         return f"Błąd podczas pobierania szczegółów orzeczenia SAOS: {str(e)}"
+
+@tool
+async def perform_legal_research(case_id: int, user_goal: str):
+    """
+    Przeprowadza kompleksowy i autonomiczny research prawny w systemie SAOS.
+    Użyj tego narzędzia, gdy użytkownik prosi o 'research', 'apelację' lub 'analizę'.
+    """
+    try:
+        db = SessionLocal()
+        try:
+            results = await perform_autonomous_research(db, case_id, user_goal)
+            return results
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Error in perform_legal_research tool: {str(e)}")
+        return f"Błąd podczas autonomicznego researchu: {str(e)}"

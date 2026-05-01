@@ -17,7 +17,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.message import add_messages
 
 from app.core.config import settings
-from app.services.saos_tools import search_saos_judgments, get_saos_judgment_details
+from app.services.saos_tools import search_saos_judgments, get_saos_judgment_details, perform_legal_research
 from app.core.database import SessionLocal
 from app.models.document import Document
 from app.models.embedding import Embedding
@@ -81,7 +81,7 @@ def get_rag_chain_for_case(case_id: int):
     )
 
     # 2. Narzędzia (Tools)
-    tools = [search_saos_judgments, get_saos_judgment_details]
+    tools = [search_saos_judgments, get_saos_judgment_details, perform_legal_research]
     llm_with_tools = llm.bind_tools(tools)
 
     # 3. Definicja Węzłów (Nodes)
@@ -96,14 +96,16 @@ def get_rag_chain_for_case(case_id: int):
 
         # Prompt systemowy
         prompt = ChatPromptTemplate.from_messages([
-            ("system", "Jesteś zaawansowanym Asystentem Prawnym platformy Nomous.ia.\n"
-                       "Masz dostęp do bazy wiedzy bieżącej sprawy oraz do systemu orzecznictwa SAOS.\n"
-                       "Kontekst dokumentów sprawy:\n{context}\n\n"
-                       "Ważne instrukcje:\n"
-                       "1. Jeśli użytkownik pyta o orzecznictwo lub linię orzeczniczą, użyj narzędzia 'search_saos_judgments'.\n"
-                       "2. Po znalezieniu listy orzeczeń, zapytaj użytkownika, czy chce poznać szczegóły któregoś z nich.\n"
-                       "3. Jeśli pobierzesz szczegóły orzeczenia ('get_saos_judgment_details'), zostanie ono automatycznie zapisane w aktach sprawy.\n"
-                       "4. Zawsze podawaj ID orzeczenia SAOS i sygnaturę, jeśli są dostępne.\n"
+            ("system", "Jesteś wybitnym Asystentem Prawnym platformy Nomous.ia.\n"
+                       "Twój cel: Pomagać użytkownikowi w budowaniu najmocniejszej strategii procesowej.\n"
+                       "Masz dostęp do bazy wiedzy bieżącej sprawy oraz do zaawansowanego systemu researchu SAOS.\n\n"
+                       "KONTEKST DOKUMENTÓW SPRAWY:\n{context}\n\n"
+                       "INSTRUKCJE SPECJALNE:\n"
+                       "1. Gdy użytkownik mówi o apelacji, pisaniu pism lub prosi o research - użyj narzędzia 'perform_legal_research'.\n"
+                       "2. 'perform_legal_research' to Twoja najpotężniejsza broń - sam analizuje akta i znajduje najlepsze wyroki. Używaj go proaktywnie.\n"
+                       "3. Po otrzymaniu wyników researchu, przedstaw je w sposób przejrzysty, cytując najmocniejsze argumenty (ai_reason).\n"
+                       "4. Jeśli użytkownik chce tylko szybko coś sprawdzić, możesz użyć 'search_saos_judgments'.\n"
+                       "5. Zawsze zachowuj profesjonalny, merytoryczny ton.\n"
                        f"Bieżący identyfikator sprawy (case_id): {state['case_id']}"),
             MessagesPlaceholder(variable_name="messages"),
         ])
