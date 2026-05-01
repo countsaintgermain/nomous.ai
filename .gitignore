@@ -69,3 +69,8 @@ backend/uploads/
 browser-extension/node_modules/
 browser-extension/.output/
 browser-extension/.wxt/
+
+# Ignored Folders
+inne/
+Nomous.ai/
+tmp/
