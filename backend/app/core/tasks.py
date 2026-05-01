@@ -104,13 +104,16 @@ WYTYCZNE UŻYTKOWNIKA:
 ORZECZENIE (Streszczenie/Fragment):
 {summary[:3000]}
 
-Zadanie: Oceń w skali 0-100 jak bardzo to orzeczenie wspiera linię obrony/argumentację zgodną z wytycznymi.
-Zwróć WYŁĄCZNIE czysty JSON: {{"score": int, "reason": "jedno zdanie uzasadnienia"}}
+Zadanie: 
+1. Oceń w skali 0-100 jak bardzo to orzeczenie wspiera linię obrony/argumentację zgodną z wytycznymi.
+2. Wyciągnij DOKŁADNIE 2-3 najistotniejsze cytaty (fragmenty) z tekstu orzeczenia, które potwierdzają Twoją ocenę.
+
+Zwróć WYŁĄCZNIE czysty JSON: {{"score": int, "reason": "jedno zdanie uzasadnienia", "snippets": ["cytat 1", "cytat 2"]}}
 """
                 resp = await llm.ainvoke(eval_prompt)
                 content = resp.content
                 
-                # Wyciąganie JSON (obsługa formatów list/string)
+                # Wyciąganie JSON
                 json_str = ""
                 if isinstance(content, str): json_str = content.strip()
                 elif isinstance(content, list) and content:
@@ -120,6 +123,7 @@ Zwróć WYŁĄCZNIE czysty JSON: {{"score": int, "reason": "jedno zdanie uzasadn
                 eval_data = json.loads(json_str)
                 j["ai_score"] = eval_data.get("score", 0)
                 j["ai_reason"] = eval_data.get("reason", "")
+                j["ai_snippets"] = eval_data.get("snippets", [])
                 return j
             except Exception as e:
                 print(f"Evaluation error: {e}")

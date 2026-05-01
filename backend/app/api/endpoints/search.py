@@ -230,25 +230,28 @@ Zwróć odpowiedź w formacie JSON jako tablicę 5 stringów. Każdy string powi
                     # Używamy wybranego modelu (Pro lub Analytical)
                     llm = get_llm(db, model_type=model_type, json_mode=True)
                     text_to_eval = j.get("summary") or j.get("chunk_text") or ""
-                    
                     eval_prompt = f"""Jesteś ekspertem prawnym. Oceń przydatność orzeczenia do sprawy.
-KONTEKST SPRAWY: {case_context_str[:1500]}
-ZAPYTANIE UŻYTKOWNIKA: {query}
-ORZECZENIE: {text_to_eval[:2500]}
+                    KONTEKST SPRAWY: {case_context_str[:1500]}
+                    ZAPYTANIE UŻYTKOWNIKA: {query}
+                    ORZECZENIE: {text_to_eval[:2500]}
 
-Oceń w skali 0-100. Zwróć WYŁĄCZNIE JSON: {{"score": int, "reason": "jedno zdanie"}}
-"""
+                    Oceń w skali 0-100. Wyciągnij też 2-3 najciekawsze cytaty pasujące do sprawy.
+                    Zwróć WYŁĄCZNIE JSON: {{"score": int, "reason": "jedno zdanie", "snippets": ["fragment 1", "fragment 2"]}}
+                    """
                     resp = await llm.ainvoke(eval_prompt)
+                    # Parsowanie (obsługa formatów)
                     content = resp.content
                     json_str = ""
                     if isinstance(content, str): json_str = content.strip()
                     elif isinstance(content, list) and content:
                         item = content[0]
                         if isinstance(item, dict): json_str = item.get("text", "").strip()
-                    
+
                     eval_data = json.loads(json_str)
                     j["ai_score"] = eval_data.get("score", 0)
                     j["ai_reason"] = eval_data.get("reason", "")
+                    j["ai_snippets"] = eval_data.get("snippets", [])
+
                     
                     # Logika ekspansji: jeśli wyrok jest genialny, szukamy podobnych (tylko w pierwszej turze)
                     if not is_expansion and j["ai_score"] > 85:
