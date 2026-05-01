@@ -23,23 +23,33 @@
       "args": [
         "-y",
         "@modelcontextprotocol/server-filesystem",
-        "."
+        "/Users/saintgermain/Workspace/nomous.ai"
       ]
     },
-    // "postgres": {
-    //   "command": "npx",
-    //   "args": [
-    //     "-y",
-    //     "@modelcontextprotocol/server-postgres",
-    //     "postgresql://user:pass@localhost:5432/twoja_baza"
-    //   ]
-    // },
     "browser": {
       "command": "npx",
       "args": [
         "-y",
         "@modelcontextprotocol/server-puppeteer"
       ]
+    },
+    "nais": {
+      "url": "https://nais.bework.io/mcp/sse",
+      "timeout": 30000,
+      "headers": {
+        "X-API-Key": "sk-saos-ai-7f2a1b9c4e8d0f3a6b5c2d1e9f8a0b7c4d3e2f1a0b"
+      }
     }
+    // "nomous-legal": {
+    //   "command": "/usr/local/bin/docker-compose",
+    //   "args": [
+    //     "exec",
+    //     "-T",
+    //     "api",
+    //     "sh",
+    //     "-c",
+    //     "PYTHONPATH=/app /app/venv/bin/python /app/app/mcp/server.py"
+    //   ]
+    // }
   }
 }
