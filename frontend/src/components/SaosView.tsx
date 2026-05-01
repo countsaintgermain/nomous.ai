@@ -16,6 +16,7 @@ import {
     ThumbsUp,
     ThumbsDown,
     Wand2,
+    Quote,
     ChevronDown,
     ChevronUp,
     RefreshCw
@@ -213,6 +214,7 @@ export function SaosView({ activeCase }: SaosViewProps) {
                     summary: j.summary,
                     aiScore: j.ai_score,
                     aiReason: j.ai_reason,
+                    aiSnippets: j.ai_snippets || [],
                     division: {
                         name: j.division_name,
                         court: { name: j.court_name }
@@ -253,7 +255,8 @@ export function SaosView({ activeCase }: SaosViewProps) {
                         court: { name: d.court?.name || d.court_name }
                     },
                     judges: d.judges,
-                    chunk_text: judgment.chunk_text
+                    chunk_text: judgment.chunk_text,
+                    aiSnippets: d.ai_snippets || (judgment as any).aiSnippets || []
                 }));
                 mappedDetails.sort((a: any, b: any) => new Date(b.judgmentDate).getTime() - new Date(a.judgmentDate).getTime());
                 setSelectedJudgments(mappedDetails);
@@ -380,6 +383,7 @@ export function SaosView({ activeCase }: SaosViewProps) {
                                             summary: j.summary,
                                             aiScore: j.ai_score,
                                             aiReason: j.ai_reason,
+                                            aiSnippets: j.ai_snippets,
                                             division: {
                                                 name: j.division_name,
                                                 court: { name: j.court_name }
@@ -419,19 +423,31 @@ export function SaosView({ activeCase }: SaosViewProps) {
         }
     };
 
-    const renderHighlightedText = (text?: string, chunkText?: string, quotes: string[] = []) => {
+    const renderHighlightedText = (text?: string, chunkText?: string, quotes: any = []) => {
         if (!text) return "Brak treści.";
         let result = text;
+        const quotesArray = Array.isArray(quotes) ? quotes : [];
 
-        quotes.forEach(quote => {
-            if (!quote.trim()) return;
-            const quoteRegex = new RegExp(`(${quote.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-            result = result.replace(quoteRegex, '<mark class="bg-green-200 dark:bg-green-800/50 text-inherit px-1 rounded">$1</mark>');
+        quotesArray.forEach(quote => {
+            if (!quote || typeof quote !== 'string' || !quote.trim()) return;
+            try {
+                // Dodano ucieczkę ukośnika / i innych znaków specjalnych
+                const escapedQuote = quote.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&');
+                const quoteRegex = new RegExp(`(${escapedQuote})`, 'gi');
+                result = result.replace(quoteRegex, '<mark class="bg-green-200 dark:bg-green-800/50 text-inherit px-1 rounded">$1</mark>');
+            } catch (e) {
+                console.warn("Could not highlight quote:", quote, e);
+            }
         });
 
         if (chunkText && chunkText.trim()) {
-            const chunkRegex = new RegExp(`(${chunkText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-            result = result.replace(chunkRegex, '<mark class="bg-yellow-200 dark:bg-yellow-800/50 text-inherit px-1 rounded">$1</mark>');
+            try {
+                const escapedChunk = chunkText.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&');
+                const chunkRegex = new RegExp(`(${escapedChunk})`, 'gi');
+                result = result.replace(chunkRegex, '<mark class="bg-yellow-200 dark:bg-yellow-800/50 text-inherit px-1 rounded">$1</mark>');
+            } catch (e) {
+                console.warn("Could not highlight chunk:", chunkText, e);
+            }
         }
 
         return <div className="text-sm leading-relaxed whitespace-pre-wrap font-serif" dangerouslySetInnerHTML={{ __html: result }} />;
@@ -552,7 +568,27 @@ export function SaosView({ activeCase }: SaosViewProps) {
                                     </div>
                                 </CardHeader>
                                 <CardContent className="pt-0 pb-4">
-                                    {(judgment.summary || judgment.textContent || judgment.chunk_text) && (
+                                    {(judgment.aiSnippets && judgment.aiSnippets.length > 0) ? (
+                                        <div className="space-y-2">
+                                            {judgment.aiSnippets.map((snippet: string, idx: number) => (
+                                                <div key={idx} className="relative pl-6 py-2 border-l-2 border-emerald-500/30 bg-emerald-500/5 rounded-r-lg group">
+                                                    <Quote className="h-3 w-3 text-emerald-500 absolute left-2 top-3 opacity-50 group-hover:opacity-100 transition-opacity" />
+                                                    <p className="text-sm text-muted-foreground italic leading-relaxed font-serif">
+                                                        {snippet}
+                                                    </p>
+                                                </div>
+                                            ))}
+                                            
+                                            {judgment.aiReason && (
+                                                <div className="flex gap-2 p-2.5 bg-indigo-500/5 border border-indigo-500/20 rounded-lg mt-4 animate-in slide-in-from-left-2">
+                                                    <Bot className="h-4 w-4 text-indigo-600 shrink-0 mt-0.5" />
+                                                    <p className="text-[11px] text-indigo-700 italic leading-snug">
+                                                        <strong>Agent:</strong> {judgment.aiReason}
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (judgment.summary || judgment.textContent || judgment.chunk_text) && (
                                         <div className="space-y-3">
                                             <div className="text-sm text-muted-foreground line-clamp-5 leading-relaxed overflow-hidden font-serif" 
                                                  dangerouslySetInnerHTML={{ __html: judgment.chunk_text || judgment.summary || judgment.textContent || "" }} />
@@ -794,7 +830,7 @@ export function SaosView({ activeCase }: SaosViewProps) {
                                         <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-2">
                                             <Scale className="h-4 w-4" /> Treść orzeczenia
                                         </h3>
-                                        {renderHighlightedText(j.textContent, j.chunk_text, extractedQuotes)}
+                                        {renderHighlightedText(j.textContent, j.chunk_text, [...(extractedQuotes || []), ...(j.aiSnippets || [])])}
                                     </section>
                                 </TabsContent>
                             ))}
